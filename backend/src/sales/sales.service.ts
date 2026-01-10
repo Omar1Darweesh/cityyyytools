@@ -172,12 +172,77 @@ export class SalesService {
     branchId?: number;
     customerId?: number;
     search?: string;
+    paymentMethod?: string;
+    dateFilter?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
-    const { skip, take, branchId, customerId, search } = params;
+    const { skip, take, branchId, customerId, search, paymentMethod, dateFilter, startDate, endDate } = params;
 
     const where: any = {};
+
     if (branchId) where.branchId = branchId;
     if (customerId) where.customerId = customerId;
+
+    // Payment method filter
+    if (paymentMethod && paymentMethod !== 'ALL') {
+      where.paymentMethod = paymentMethod;
+    }
+
+    // Date filter logic
+    if (dateFilter || (startDate && endDate)) {
+      let start: Date | undefined;  // ✅ Initialize as undefined
+      let end: Date | undefined;    // ✅ Initialize as undefined
+      const now = new Date();
+
+      switch (dateFilter) {
+        case 'today':
+          start = new Date(now.setHours(0, 0, 0, 0));
+          end = new Date(now.setHours(23, 59, 59, 999));
+          break;
+
+        case 'yesterday':
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          start = new Date(yesterday.setHours(0, 0, 0, 0));
+          end = new Date(yesterday.setHours(23, 59, 59, 999));
+          break;
+
+        case 'thisWeek':
+          const weekStart = new Date();
+          const dayOfWeek = weekStart.getDay();
+          weekStart.setDate(weekStart.getDate() - dayOfWeek); // Go to Sunday
+          start = new Date(weekStart.setHours(0, 0, 0, 0));
+          end = new Date(); // Current time
+          end.setHours(23, 59, 59, 999);
+          break;
+
+        case 'thisMonth':
+          const monthStart = new Date();
+          start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1, 0, 0, 0, 0);
+          end = new Date(); // Current time
+          end.setHours(23, 59, 59, 999);
+          break;
+
+        case 'custom':
+          if (startDate && endDate) {
+            start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+          }
+          break;
+      }
+
+      // ✅ Only apply date filter if both start and end are defined
+      if (start && end) {
+        where.createdAt = {
+          gte: start,
+          lte: end,
+        };
+      }
+    }
+
     if (search) {
       where.OR = [
         { invoiceNo: { contains: search } },
@@ -209,7 +274,7 @@ export class SalesService {
       this.prisma.salesInvoice.count({ where }),
     ]);
 
-    // ✅ Convert Decimal to number for frontend
+    // Convert Decimal to number for frontend
     const itemsWithNumbers = items.map((sale) => ({
       ...sale,
       subtotal: Number(sale.subtotal),
@@ -228,6 +293,8 @@ export class SalesService {
       total,
     };
   }
+
+
 
   async findOne(id: number) {
     const invoice = await this.prisma.salesInvoice.findUnique({

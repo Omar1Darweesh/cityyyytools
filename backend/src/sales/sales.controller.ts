@@ -30,6 +30,10 @@ export class SalesController {
     @Query('branchId') branchId?: string,
     @Query('customerId') customerId?: string,
     @Query('search') search?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('dateFilter') dateFilter?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     return this.salesService.findAll({
       skip: skip ? parseInt(skip) : undefined,
@@ -37,6 +41,10 @@ export class SalesController {
       branchId: branchId ? parseInt(branchId) : undefined,
       customerId: customerId ? parseInt(customerId) : undefined,
       search,
+      paymentMethod,          // NEW
+      dateFilter,             // NEW
+      startDate,              // NEW
+      endDate,                // NEW
     });
   }
 

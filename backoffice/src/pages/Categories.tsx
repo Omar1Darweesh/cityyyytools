@@ -60,6 +60,16 @@ export default function Categories() {
         fetchCategories();
     }, []);
 
+    useEffect(() => {
+        const mixedCat = categories.find(c =>
+            c.name?.toLowerCase() === 'mixed' || c.nameAr === 'متنوع'
+        );
+        if (mixedCat) {
+            setExpandedCategories(new Set([mixedCat.id]));
+        }
+    }, [categories]);
+
+
     const fetchCategories = async () => {
         try {
             const { data } = await apiClient.get('/products/categories');
@@ -283,9 +293,16 @@ export default function Categories() {
                         <p>ابدأ بإضافة تصنيف رئيسي</p>
                     </div>
                 ) : (
-                    categories.map((category) => (
+                    [...categories].sort((a, b) => {
+                        const aIsMixed = a.name?.toLowerCase() === 'mixed' || a.nameAr === 'متنوع';
+                        const bIsMixed = b.name?.toLowerCase() === 'mixed' || b.nameAr === 'متنوع';
+                        if (aIsMixed) return 1;
+                        if (bIsMixed) return -1;
+                        return 0;
+                    }).map((category) => (
                         <CategoryCard
                             key={category.id}
+
                             category={category}
                             isExpanded={expandedCategories.has(category.id)}
                             onToggle={() => toggleCategory(category.id)}
@@ -524,10 +541,46 @@ export default function Categories() {
 // CATEGORY CARD COMPONENT
 // ============================================
 function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddSubcategory, expandedSubcategories, onToggleSubcategory, onEditSubcategory, onDeleteSubcategory, onAddItemType, onEditItemType, onDeleteItemType, expandedItemTypes, onToggleItemType, itemProducts }: any) {
+    // ✅ Detect Mixed category
+    const isMixed = category.name?.toLowerCase() === 'mixed' || category.nameAr === 'متنوع';
+
+    // ✅ Different colors for Mixed
+    const bgGradient = isMixed
+        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'  // Orange
+        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; // Purple
+
+    // ✅ State for Mixed products
+    const [mixedProducts, setMixedProducts] = useState<any[]>([]);
+    const [loadingProducts, setLoadingProducts] = useState(false);
+
+    // ✅ Load products for Mixed category
+    useEffect(() => {
+        if (isMixed && isExpanded) {
+            loadMixedProducts();
+        }
+    }, [isMixed, isExpanded, category.id]);
+
+    const loadMixedProducts = async () => {
+        try {
+            setLoadingProducts(true);
+            const branchId = localStorage.getItem('branchId') || '1';
+            const { data } = await apiClient.get(`/products?categoryId=${category.id}&branchId=${branchId}`);
+            console.log('✅ Mixed products loaded:', data);
+            const products = data.data || data; // ✅ Extract nested array
+            setMixedProducts(Array.isArray(products) ? products : []);
+
+        } catch (error) {
+            console.error('Failed to load mixed products:', error);
+            setMixedProducts([]);
+        } finally {
+            setLoadingProducts(false);
+        }
+    };
+
     return (
         <div
             style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: bgGradient, // ✅ Dynamic color
                 borderRadius: '1rem',
                 padding: '1.5rem',
                 color: 'white',
@@ -545,88 +598,262 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {isExpanded ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
-                    <div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{category.nameAr || category.name}</div>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>{category.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        {/* ✅ Different icon for Mixed */}
+                        <span style={{ fontSize: '2rem' }}>{isMixed ? '🔧' : '📁'}</span>
+                        <div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>
+                                {category.nameAr || category.name}
+                            </div>
+                            <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                                {category.name}
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                        style={{
-                            padding: '0.5rem',
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            color: 'white',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        <Edit size={18} />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                        style={{
-                            padding: '0.5rem',
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            color: 'white',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        <Trash2 size={18} />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onAddSubcategory(); }}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.5rem 1rem',
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            color: 'white',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        <Plus size={18} />
-                        تصنيف فرعي
-                    </button>
+                    {!isMixed && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                            style={{
+                                padding: '0.5rem',
+                                background: 'rgba(255, 255, 255, 0.2)',
+                                border: 'none',
+                                borderRadius: '0.5rem',
+                                color: 'white',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <Edit size={18} />
+                        </button>
+                    )}
+                    {!isMixed && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                            style={{
+                                padding: '0.5rem',
+                                background: 'rgba(255, 255, 255, 0.2)',
+                                border: 'none',
+                                borderRadius: '0.5rem',
+                                color: 'white',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    )}
+
+                    {/* ✅ Hide "Add Subcategory" button for Mixed */}
+                    {!isMixed && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onAddSubcategory(); }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.5rem 1rem',
+                                background: 'rgba(255, 255, 255, 0.2)',
+                                border: 'none',
+                                borderRadius: '0.5rem',
+                                color: 'white',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <Plus size={18} />
+                            تصنيف فرعي
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Subcategories */}
+            {/* Content - Different for Mixed vs Normal */}
             {isExpanded && (
                 <div style={{ marginTop: '1rem', marginRight: '2rem' }}>
-                    {category.subcategories?.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '1rem', opacity: 0.7 }}>لا توجد تصنيفات فرعية</div>
+                    {isMixed ? (
+                        /* ✅ MIXED CATEGORY - Show Products */
+                        loadingProducts ? (
+                            <div style={{
+                                padding: '2rem',
+                                textAlign: 'center',
+                                background: 'rgba(255,255,255,0.1)',
+                                borderRadius: '0.75rem'
+                            }}>
+                                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⏳</div>
+                                <div>جاري تحميل المنتجات...</div>
+                            </div>
+                        ) : mixedProducts.length === 0 ? (
+                            <div style={{
+                                padding: '2.5rem',
+                                textAlign: 'center',
+                                background: 'rgba(255,255,255,0.1)',
+                                borderRadius: '0.75rem',
+                            }}>
+                                <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>📦</div>
+                                <div style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>
+                                    لا توجد منتجات متنوعة
+                                </div>
+                                <div style={{ fontSize: '0.875rem', opacity: 0.8 }}>
+                                    أضف منتجات من صفحة "المنتجات" واختر "متنوع" كتصنيف
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                {/* Product Count Badge */}
+                                <div style={{
+                                    padding: '0.75rem 1rem',
+                                    background: 'rgba(255,255,255,0.2)',
+                                    borderRadius: '0.5rem',
+                                    marginBottom: '1rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    fontSize: '0.875rem',
+                                    fontWeight: '600',
+                                }}>
+                                    <span>📦</span>
+                                    <span>{mixedProducts.length} منتج متنوع</span>
+                                </div>
+
+                                {/* Products Grid */}
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                                    gap: '1rem',
+                                }}>
+                                    {mixedProducts.map((product) => (
+                                        <div
+                                            key={product.id}
+                                            style={{
+                                                background: 'rgba(255,255,255,0.15)',
+                                                borderRadius: '0.75rem',
+                                                padding: '1rem',
+                                                backdropFilter: 'blur(10px)',
+                                                border: '1px solid rgba(255,255,255,0.2)',
+                                                transition: 'all 0.2s',
+                                                cursor: 'pointer',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = 'rgba(255,255,255,0.25)';
+                                                e.currentTarget.style.transform = 'translateY(-4px)';
+                                                e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.2)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                e.currentTarget.style.boxShadow = 'none';
+                                            }}
+                                        >
+                                            {/* Product Icon */}
+                                            <div style={{
+                                                width: '70px',
+                                                height: '70px',
+                                                background: 'rgba(255,255,255,0.2)',
+                                                borderRadius: '0.75rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '2.5rem',
+                                                marginBottom: '0.75rem',
+                                                margin: '0 auto 0.75rem auto',
+                                            }}>
+                                                📦
+                                            </div>
+
+                                            {/* Product Name */}
+                                            <div style={{
+                                                fontSize: '0.9375rem',
+                                                fontWeight: '700',
+                                                marginBottom: '0.5rem',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                textAlign: 'center',
+                                            }}>
+                                                {product.nameAr || product.nameEn}
+                                            </div>
+
+                                            {/* Product Code */}
+                                            <div style={{
+                                                fontSize: '0.75rem',
+                                                opacity: 0.8,
+                                                fontFamily: 'monospace',
+                                                marginBottom: '0.75rem',
+                                                textAlign: 'center',
+                                            }}>
+                                                {product.code || product.barcode}
+                                            </div>
+
+                                            {/* Divider */}
+                                            <div style={{
+                                                height: '1px',
+                                                background: 'rgba(255,255,255,0.2)',
+                                                marginBottom: '0.75rem',
+                                            }} />
+
+                                            {/* Stock & Price */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center'
+                                            }}>
+                                                <div style={{
+                                                    fontSize: '0.75rem',
+                                                    padding: '0.375rem 0.625rem',
+                                                    background: product.stock > 10
+                                                        ? 'rgba(16,185,129,0.3)'
+                                                        : product.stock > 0
+                                                            ? 'rgba(245,158,11,0.3)'
+                                                            : 'rgba(239,68,68,0.3)',
+                                                    borderRadius: '0.375rem',
+                                                    fontWeight: '600',
+                                                }}>
+                                                    {product.stock || 0} متاح
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '0.9375rem',
+                                                    fontWeight: '700'
+                                                }}>
+                                                    {Number(product.priceRetail).toFixed(2)} ر.س
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )
                     ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            {category.subcategories?.map((sub: Subcategory) => (
-                                <SubcategoryCard
-                                    key={sub.id}
-                                    subcategory={sub}
-                                    isExpanded={expandedSubcategories.has(sub.id)}
-                                    onToggle={() => onToggleSubcategory(sub.id)}
-                                    onEdit={() => onEditSubcategory(sub)}
-                                    onDelete={() => onDeleteSubcategory(sub.id)}
-                                    onAddItemType={() => onAddItemType(sub.id)}
-                                    onEditItemType={onEditItemType}
-                                    onDeleteItemType={onDeleteItemType}
-                                    expandedItemTypes={expandedItemTypes}
-                                    onToggleItemType={onToggleItemType}
-                                    itemProducts={itemProducts}
-                                />
-                            ))}
-                        </div>
+                        /* ✅ NORMAL CATEGORY - Show Subcategories (Original Logic) */
+                        category.subcategories?.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '1rem', opacity: 0.7 }}>
+                                لا توجد تصنيفات فرعية
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {category.subcategories?.map((sub: Subcategory) => (
+                                    <SubcategoryCard
+                                        key={sub.id}
+                                        subcategory={sub}
+                                        isExpanded={expandedSubcategories.has(sub.id)}
+                                        onToggle={() => onToggleSubcategory(sub.id)}
+                                        onEdit={() => onEditSubcategory(sub)}
+                                        onDelete={() => onDeleteSubcategory(sub.id)}
+                                        onAddItemType={() => onAddItemType(sub.id)}
+                                        onEditItemType={onEditItemType}
+                                        onDeleteItemType={onDeleteItemType}
+                                        expandedItemTypes={expandedItemTypes}
+                                        onToggleItemType={onToggleItemType}
+                                        itemProducts={itemProducts}
+                                    />
+                                ))}
+                            </div>
+                        )
                     )}
                 </div>
             )}
         </div>
     );
 }
+
 
 // ============================================
 // SUBCATEGORY CARD COMPONENT
@@ -887,6 +1114,167 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
             >
                 <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: 'bold' }}>{title}</h2>
                 {children}
+            </div>
+        </div>
+    );
+}
+
+// ✅ NEW COMPONENT: Display products for Mixed category
+function MixedCategoryProducts({ categoryId }: { categoryId: number }) {
+    const [products, setProducts] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadMixedProducts();
+    }, [categoryId]);
+
+    const loadMixedProducts = async () => {
+        try {
+            setLoading(true);
+            const { data } = await apiClient.get(`/products?categoryId=${categoryId}`);
+            setProducts(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('Failed to load mixed products:', error);
+            setProducts([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div style={{
+                padding: '40px',
+                textAlign: 'center',
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '12px'
+            }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
+                <div>جاري التحميل...</div>
+            </div>
+        );
+    }
+
+    if (products.length === 0) {
+        return (
+            <div style={{
+                padding: '40px',
+                textAlign: 'center',
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '12px',
+            }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📦</div>
+                <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
+                    لا توجد منتجات متنوعة
+                </div>
+                <div style={{ fontSize: '14px', opacity: 0.8 }}>
+                    أضف منتجات من صفحة المنتجات واختر "متنوع" كتصنيف
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <div style={{
+                padding: '12px 16px',
+                background: 'rgba(255,255,255,0.2)',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+            }}>
+                <span>📦</span>
+                <span>{products.length} منتج متنوع</span>
+            </div>
+
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                gap: '12px',
+            }}>
+                {products.map((product) => (
+                    <div
+                        key={product.id}
+                        style={{
+                            background: 'rgba(255,255,255,0.15)',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            backdropFilter: 'blur(10px)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            transition: 'all 0.2s',
+                            cursor: 'pointer',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.25)';
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                    >
+                        {/* Product Icon */}
+                        <div style={{
+                            width: '60px',
+                            height: '60px',
+                            background: 'rgba(255,255,255,0.2)',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '32px',
+                            marginBottom: '12px',
+                        }}>
+                            📦
+                        </div>
+
+                        {/* Product Name */}
+                        <div style={{
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            marginBottom: '8px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            {product.nameAr || product.nameEn}
+                        </div>
+
+                        {/* Product Code */}
+                        <div style={{
+                            fontSize: '11px',
+                            opacity: 0.8,
+                            fontFamily: 'monospace',
+                            marginBottom: '8px',
+                        }}>
+                            {product.code || product.barcode}
+                        </div>
+
+                        {/* Stock & Price */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{
+                                fontSize: '12px',
+                                padding: '4px 8px',
+                                background: product.stock > 10
+                                    ? 'rgba(16,185,129,0.3)'
+                                    : product.stock > 0
+                                        ? 'rgba(245,158,11,0.3)'
+                                        : 'rgba(239,68,68,0.3)',
+                                borderRadius: '6px',
+                                fontWeight: '600',
+                            }}>
+                                {product.stock || 0} متاح
+                            </div>
+                            <div style={{ fontSize: '14px', fontWeight: '700' }}>
+                                {Number(product.priceRetail).toFixed(2)} ر.س
+                            </div>
+                        </div>
+                    </div>
+                ))}
             </div>
         </div>
     );

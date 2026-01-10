@@ -46,6 +46,12 @@ function POS() {
     const [barcode, setBarcode] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [paymentMethod, setPaymentMethod] = useState('CASH');
+    const [showProductBrowser, setShowProductBrowser] = useState(false);
+    const [browserProducts, setBrowserProducts] = useState<Product[]>([]);
+    const [selectedCategory, setSelectedCategory] = useState<string>('');
+    const [categories, setCategories] = useState<any[]>([]);
+
+
 
     const PAYMENT_METHODS = [
         { id: 'CASH', name: 'نقدي', icon: '💵' },
@@ -76,6 +82,47 @@ function POS() {
     useEffect(() => {
         loadPlatformSettings();
     }, []);
+
+    const loadCategories = async () => {
+        try {
+            const data = await apiClient.get('/products/categories');
+            setCategories(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('Failed to load categories:', e);
+            setCategories([]);
+        }
+    };
+
+    const loadProductsForBrowser = async (categoryId?: string) => {
+        try {
+            const branchId = user.branchId || user.branch?.id || 1;
+            const url = categoryId
+                ? `/products?branchId=${branchId}&categoryId=${categoryId}&active=true`
+                : `/products?branchId=${branchId}&active=true`;
+
+            const response = await apiClient.get(url);
+            const products = (response.data || response || []).map((p: any) => ({
+                ...p,
+                priceRetail: Number(p.priceRetail || 0),
+                priceWholesale: p.priceWholesale ? Number(p.priceWholesale) : undefined,
+                cost: Number(p.cost || 0),
+            }));
+
+            setBrowserProducts(products);
+        } catch (e) {
+            console.error('Failed to load products:', e);
+            setBrowserProducts([]);
+        }
+    };
+
+    useEffect(() => {
+        if (showProductBrowser) {
+            loadCategories();
+            loadProductsForBrowser();
+        }
+    }, [showProductBrowser]);
+
+
 
     const loadPlatformSettings = async () => {
         try {
@@ -210,16 +257,36 @@ function POS() {
     };
 
     const addToCart = (product: Product) => {
+        // ✅ Check if product has stock information
+        const availableStock = product.stock !== undefined ? product.stock : Infinity;
+
+        // ✅ Check if stock is 0
+        if (availableStock === 0) {
+            playBeep('error');
+            setMessage('❌ المنتج غير متوفر في المخزن');
+            return;
+        }
+
         let appliedPrice = Number(product.priceRetail);
         if (selectedCustomer?.type === 'WHOLESALE' && product.priceWholesale) {
             appliedPrice = Number(product.priceWholesale);
         }
 
         const existingItem = cart.find(item => item.id === product.id);
+
         if (existingItem) {
+            // ✅ Check if we can increase quantity
+            const newQty = existingItem.qty + 1;
+
+            if (newQty > availableStock) {
+                playBeep('error');
+                setMessage(`❌ المخزون المتاح فقط ${availableStock} وحدة`);
+                return;
+            }
+
             setCart(cart.map(item =>
                 item.id === product.id
-                    ? { ...item, qty: item.qty + 1, lineTotal: (item.qty + 1) * item.price }
+                    ? { ...item, qty: newQty, lineTotal: newQty * item.price }
                     : item
             ));
         } else {
@@ -230,23 +297,40 @@ function POS() {
                 lineTotal: appliedPrice,
             }]);
         }
+
         playBeep('success');
         setShowSearch(false);
         setSearchQuery('');
         setSearchResults([]);
     };
 
+
     const updateQty = (productId: number, newQty: number) => {
         if (newQty <= 0) {
             setCart(cart.filter(item => item.id !== productId));
-        } else {
-            setCart(cart.map(item =>
-                item.id === productId
-                    ? { ...item, qty: newQty, lineTotal: newQty * item.price }
-                    : item
-            ));
+            return;
         }
+
+        // ✅ Find the cart item to check stock
+        const cartItem = cart.find(item => item.id === productId);
+        if (!cartItem) return;
+
+        // ✅ Check available stock
+        const availableStock = cartItem.stock !== undefined ? cartItem.stock : Infinity;
+
+        if (newQty > availableStock) {
+            playBeep('error');
+            setMessage(`❌ المخزون المتاح فقط ${availableStock} وحدة`);
+            return;
+        }
+
+        setCart(cart.map(item =>
+            item.id === productId
+                ? { ...item, qty: newQty, lineTotal: newQty * item.price }
+                : item
+        ));
     };
+
 
     const calculateTotals = () => {
         if (!CHANNELS[activeTab]) {
@@ -485,16 +569,72 @@ function POS() {
                         </div>
                     )}
 
-                    <div className="quick-actions-grid">
-                        <button className="action-btn primary" onClick={() => setShowSearch(true)}>
-                            <Search size={22} />
-                            <span>بحث منتج</span>
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                        <button
+                            onClick={() => setShowSearch(true)}
+                            style={{
+                                flex: 1,
+                                padding: '12px',
+                                background: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                            }}
+                        >
+                            <Search size={18} />
+                            بحث منتج
                         </button>
-                        <button className="action-btn" onClick={() => setCart([])}>
-                            <Trash2 size={22} />
-                            <span>مسح السلة</span>
+
+                        {/* NEW: Browse Products Button */}
+                        <button
+                            onClick={() => setShowProductBrowser(true)}
+                            style={{
+                                flex: 1,
+                                padding: '12px',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                            }}
+                        >
+                            <ShoppingCart size={18} />
+                            عرض المنتجات
+                        </button>
+
+                        <button
+                            onClick={() => setCart([])}
+                            style={{
+                                padding: '12px 20px',
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                            }}
+                        >
+                            <Trash2 size={18} />
+                            مسح السلة
                         </button>
                     </div>
+
+
 
                     <div className="discount-card">
                         <h3>🎟️ خصم العميل</h3>
@@ -656,27 +796,475 @@ function POS() {
                         </div>
                         <div className="search-results">
                             {searchResults.map(p => (
-                                <div key={p.id} className="search-item" onClick={() => {
-                                    addToCart(p);
-                                    setShowSearch(false);
-                                }}>
-                                    <span>{p.nameEn}</span>
-                                    <span className="price">
-                                        {(selectedCustomer?.type === 'WHOLESALE' && p.priceWholesale)
-                                            ? p.priceWholesale
-                                            : p.priceRetail} ر.س
+                                <div
+                                    key={p.id}
+                                    style={{
+                                        padding: '12px',
+                                        borderBottom: '1px solid #e5e7eb',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        cursor: p.stock === 0 ? 'not-allowed' : 'pointer', // ✅
+                                        opacity: p.stock === 0 ? 0.5 : 1, // ✅
+                                        background: 'white',
+                                        transition: 'background 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (p.stock !== 0) e.currentTarget.style.background = '#f9fafb';
+                                    }}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                >
+                                    <div style={{ flex: 1, textAlign: 'right' }}>
+                                        <div style={{ fontWeight: '600', marginBottom: '4px' }}>{p.nameEn}</div>
+                                        <div style={{ fontSize: '14px', color: '#10b981' }}>
+                                            {(selectedCustomer?.type === 'WHOLESALE' && p.priceWholesale)
+                                                ? p.priceWholesale
+                                                : p.priceRetail} ر.س
+                                        </div>
                                         {p.stock !== undefined && (
-                                            <div style={{ fontSize: '11px', color: p.stock <= 0 ? 'var(--danger)' : 'var(--text-muted)', marginTop: '4px' }}>
+                                            <div style={{
+                                                fontSize: '12px',
+                                                color: p.stock === 0 ? '#ef4444' : p.stock < 10 ? '#f59e0b' : '#10b981',
+                                                fontWeight: '600',
+                                                marginTop: '4px'
+                                            }}>
                                                 المتاح: {p.stock}
                                             </div>
                                         )}
-                                    </span>
+                                    </div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (p.stock !== 0) {
+                                                addToCart(p);
+                                            } else {
+                                                playBeep('error');
+                                                setMessage('❌ المنتج غير متوفر');
+                                            }
+                                        }}
+                                        disabled={p.stock === 0} // ✅
+                                        style={{
+                                            padding: '8px 16px',
+                                            background: p.stock === 0 ? '#9ca3af' : '#3b82f6',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            cursor: p.stock === 0 ? 'not-allowed' : 'pointer',
+                                            fontSize: '14px',
+                                            fontWeight: '600',
+                                            opacity: p.stock === 0 ? 0.6 : 1
+                                        }}
+                                    >
+                                        {p.stock === 0 ? '🚫 غير متوفر' : '+ إضافة'}
+                                    </button>
                                 </div>
                             ))}
+
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Product Browser Modal - ENHANCED DESIGN */}
+            {showProductBrowser && (
+                <div
+                    className="modal-overlay"
+                    onClick={() => setShowProductBrowser(false)}
+                    style={{
+                        background: 'rgba(0, 0, 0, 0.6)',
+                        backdropFilter: 'blur(4px)'
+                    }}
+                >
+                    <div
+                        className="modal-content"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '95%',
+                            maxWidth: '1400px',
+                            height: '92vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: '#f9fafb',
+                            borderRadius: '20px',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        {/* Modern Header */}
+                        <div style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            padding: '25px 30px',
+                            color: 'white',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                        }}>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '28px', fontWeight: '700', marginBottom: '5px' }}>
+                                    🛍️ عرض المنتجات
+                                </h2>
+                                <p style={{ margin: 0, fontSize: '14px', opacity: 0.9 }}>
+                                    {browserProducts.length} منتج متاح
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowProductBrowser(false)}
+                                style={{
+                                    background: 'rgba(255,255,255,0.2)',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: 'white',
+                                    fontSize: '24px',
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Filter Section */}
+                        <div style={{
+                            padding: '20px 30px',
+                            background: 'white',
+                            borderBottom: '1px solid #e5e7eb',
+                            display: 'flex',
+                            gap: '15px',
+                            alignItems: 'center',
+                            flexWrap: 'wrap'
+                        }}>
+                            {/* Search Bar */}
+                            <div style={{ flex: 1, minWidth: '250px' }}>
+                                <input
+                                    type="text"
+                                    placeholder="🔍 بحث سريع..."
+                                    onChange={(e) => {
+                                        const query = e.target.value.toLowerCase();
+                                        if (query) {
+                                            const filtered = browserProducts.filter(p =>
+                                                (p.nameAr?.toLowerCase().includes(query)) ||
+                                                (p.nameEn?.toLowerCase().includes(query)) ||
+                                                (p.code?.toLowerCase().includes(query)) ||
+                                                (p.barcode?.toLowerCase().includes(query))
+                                            );
+                                            setBrowserProducts(filtered);
+                                        } else {
+                                            loadProductsForBrowser(selectedCategory || undefined);
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 20px',
+                                        fontSize: '15px',
+                                        border: '2px solid #e5e7eb',
+                                        borderRadius: '12px',
+                                        outline: 'none',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onFocus={(e) => e.currentTarget.style.borderColor = '#667eea'}
+                                    onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
+                                />
+                            </div>
+
+                            {/* Category Pills */}
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={() => {
+                                        setSelectedCategory('');
+                                        loadProductsForBrowser();
+                                    }}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: selectedCategory === '' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'white',
+                                        color: selectedCategory === '' ? 'white' : '#4b5563',
+                                        border: '2px solid',
+                                        borderColor: selectedCategory === '' ? 'transparent' : '#e5e7eb',
+                                        borderRadius: '25px',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    الكل
+                                </button>
+                                {categories.slice(0, 5).map(cat => (
+                                    <button
+                                        key={cat.id}
+                                        onClick={() => {
+                                            setSelectedCategory(cat.id.toString());
+                                            loadProductsForBrowser(cat.id.toString());
+                                        }}
+                                        style={{
+                                            padding: '10px 20px',
+                                            background: selectedCategory === cat.id.toString()
+                                                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                                : 'white',
+                                            color: selectedCategory === cat.id.toString() ? 'white' : '#4b5563',
+                                            border: '2px solid',
+                                            borderColor: selectedCategory === cat.id.toString() ? 'transparent' : '#e5e7eb',
+                                            borderRadius: '25px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            fontWeight: '600',
+                                            transition: 'all 0.2s',
+                                            whiteSpace: 'nowrap'
+                                        }}
+                                    >
+                                        {cat.nameAr || cat.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Products Grid - FIXED ALIGNMENT */}
+                        <div style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            padding: '25px',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                            gap: '20px',
+                            alignContent: 'start'
+                        }}>
+                            {browserProducts.length === 0 ? (
+                                <div style={{
+                                    gridColumn: '1 / -1',
+                                    textAlign: 'center',
+                                    padding: '80px 20px',
+                                    color: '#9ca3af'
+                                }}>
+                                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>📦</div>
+                                    <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '10px' }}>
+                                        لا توجد منتجات
+                                    </div>
+                                    <div style={{ fontSize: '14px' }}>
+                                        جرب تغيير الفئة أو البحث
+                                    </div>
+                                </div>
+                            ) : (
+                                browserProducts.map(product => (
+                                    <div
+                                        key={product.id}
+                                        style={{
+                                            background: 'white',
+                                            borderRadius: '16px',
+                                            overflow: 'hidden',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            position: 'relative',
+                                            height: '420px' // ✅ Fixed height for all cards
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform = 'translateY(-8px)';
+                                            e.currentTarget.style.boxShadow = '0 12px 24px rgba(102, 126, 234, 0.25)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+                                        }}
+                                    >
+                                        {/* Stock Badge - Top Right */}
+                                        {product.stock !== undefined && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: '12px',
+                                                left: '12px', // ✅ Changed to left for RTL
+                                                padding: '6px 12px',
+                                                background: product.stock > 10
+                                                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                                                    : product.stock > 0
+                                                        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                                                        : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                                color: 'white',
+                                                borderRadius: '20px',
+                                                fontSize: '11px',
+                                                fontWeight: '700',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                                                zIndex: 1,
+                                                minWidth: '50px',
+                                                textAlign: 'center'
+                                            }}>
+                                                {product.stock} متاح
+                                            </div>
+                                        )}
+
+                                        {/* Product Image Area - Fixed Height */}
+                                        <div style={{
+                                            width: '100%',
+                                            height: '140px', // ✅ Fixed height
+                                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '60px',
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                            flexShrink: 0 // ✅ Prevent shrinking
+                                        }}>
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                right: 0,
+                                                bottom: 0,
+                                                background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%)',
+                                            }}></div>
+                                            <span style={{ position: 'relative', zIndex: 1 }}>📦</span>
+                                        </div>
+
+                                        {/* Product Info - Flexbox with fixed structure */}
+                                        <div style={{
+                                            padding: '16px',
+                                            flex: 1,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            justifyContent: 'space-between' // ✅ Space between top and bottom
+                                        }}>
+                                            {/* Top Section - Name and Code */}
+                                            <div>
+                                                {/* Product Name - Fixed 2 lines */}
+                                                <h3 style={{
+                                                    margin: '0 0 8px 0',
+                                                    fontSize: '15px',
+                                                    fontWeight: '700',
+                                                    color: '#1f2937',
+                                                    lineHeight: '1.4',
+                                                    height: '42px', // ✅ Fixed height for 2 lines
+                                                    overflow: 'hidden',
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: 'vertical',
+                                                    textAlign: 'right',
+                                                    direction: 'rtl' // ✅ RTL direction
+                                                }}>
+                                                    {product.nameAr || product.nameEn}
+                                                </h3>
+
+                                                {/* Product Code */}
+                                                <div style={{
+                                                    fontSize: '11px',
+                                                    color: '#9ca3af',
+                                                    fontFamily: 'monospace',
+                                                    textAlign: 'right',
+                                                    direction: 'ltr', // ✅ LTR for codes
+                                                    marginBottom: '8px'
+                                                }}>
+                                                    #{product.code || product.barcode}
+                                                </div>
+                                            </div>
+
+                                            {/* Bottom Section - Price and Button */}
+                                            <div>
+                                                {/* Divider */}
+                                                <div style={{
+                                                    height: '1px',
+                                                    background: 'linear-gradient(to left, transparent, #e5e7eb, transparent)',
+                                                    marginBottom: '12px'
+                                                }}></div>
+
+                                                {/* Price - Always same position */}
+                                                <div style={{
+                                                    fontSize: '22px',
+                                                    fontWeight: '800',
+                                                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                                    WebkitBackgroundClip: 'text',
+                                                    WebkitTextFillColor: 'transparent',
+                                                    textAlign: 'center', // ✅ Center aligned
+                                                    marginBottom: '12px',
+                                                    height: '28px', // ✅ Fixed height
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    direction: 'rtl'
+                                                }}>
+                                                    {(() => {
+                                                        const price = (selectedCustomer?.type === 'WHOLESALE' && product.priceWholesale)
+                                                            ? Number(product.priceWholesale)
+                                                            : Number(product.priceRetail);
+                                                        return price.toFixed(2);
+                                                    })()} ر.س
+                                                </div>
+
+                                                {/* Add Button - Disabled if no stock */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        addToCart(product);
+                                                    }}
+                                                    disabled={product.stock === 0} // ✅ Disable if no stock
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '12px',
+                                                        background: product.stock === 0
+                                                            ? '#9ca3af'
+                                                            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '10px',
+                                                        cursor: product.stock === 0 ? 'not-allowed' : 'pointer',
+                                                        fontSize: '14px',
+                                                        fontWeight: '700',
+                                                        transition: 'all 0.2s',
+                                                        boxShadow: product.stock === 0
+                                                            ? 'none'
+                                                            : '0 4px 12px rgba(102, 126, 234, 0.3)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: '6px',
+                                                        opacity: product.stock === 0 ? 0.6 : 1
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        if (product.stock !== 0) {
+                                                            e.currentTarget.style.transform = 'scale(1.02)';
+                                                            e.currentTarget.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)';
+                                                        }
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        if (product.stock !== 0) {
+                                                            e.currentTarget.style.transform = 'scale(1)';
+                                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+                                                        }
+                                                    }}
+                                                >
+                                                    {product.stock === 0 ? (
+                                                        <>
+                                                            <span style={{ fontSize: '18px' }}>🚫</span>
+                                                            غير متوفر
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <span style={{ fontSize: '18px' }}>+</span>
+                                                            إضافة للسلة
+                                                        </>
+                                                    )}
+                                                </button>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
+
+
 
             {/* Customer Modal */}
             {showCustomerModal && (

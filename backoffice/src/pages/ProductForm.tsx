@@ -39,9 +39,12 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
     const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<number | null>(null);
     const [selectedItemTypeId, setSelectedItemTypeId] = useState<number | null>(null);
 
+    // ✅ Mixed category mode
+    const [isMixedCategory, setIsMixedCategory] = useState(false);
+
     // Form data
     const [formData, setFormData] = useState({
-        code: '', // Will be auto-generated if empty
+        code: '',
         barcode: '',
         nameEn: '',
         nameAr: '',
@@ -64,7 +67,6 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
     }, []);
 
     // Load existing product data
-    // Load existing product data
     useEffect(() => {
         if (product) {
             setFormData({
@@ -79,7 +81,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                 priceWholesale: Number(product.priceWholesale) || 0,
                 minQty: product.minQty || 10,
                 maxQty: product.maxQty || 1000,
-                initialStock: product.stock || 0, // ✅ Load actual stock
+                initialStock: product.stock || 0,
                 active: product.active ?? true,
             });
 
@@ -102,10 +104,17 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                 if (itemType) {
                     setSelectedItemTypeId(itemType.id);
                 }
+                setIsMixedCategory(false);
+            }
+            // ✅ Check if it's a Mixed category product (has category but no itemType)
+            else if (product.category) {
+                setSelectedCategoryId(product.category.id);
+                const isMixed = product.category.name?.toLowerCase() === 'mixed' ||
+                    product.category.nameAr === 'متنوع';
+                setIsMixedCategory(isMixed);
             }
         }
     }, [product]);
-
 
     const fetchCategories = async () => {
         try {
@@ -134,18 +143,29 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
         }
     };
 
-    const handleCategoryChange = (categoryId: number) => {
+    // ✅ FIXED: Handle category change with Mixed detection
+    const handleCategoryChange = (categoryId: number | null) => {
         setSelectedCategoryId(categoryId);
         setSelectedSubcategoryId(null);
         setSelectedItemTypeId(null);
         setSubcategories([]);
         setItemTypes([]);
+
         if (categoryId) {
-            loadSubcategories(categoryId);
+            const category = categories.find(c => c.id === categoryId);
+            const isMixed = category?.name?.toLowerCase() === 'mixed' || category?.nameAr === 'متنوع';
+            setIsMixedCategory(isMixed);
+
+            // Only load subcategories if NOT mixed
+            if (!isMixed) {
+                loadSubcategories(categoryId);
+            }
+        } else {
+            setIsMixedCategory(false);
         }
     };
 
-    const handleSubcategoryChange = (subcategoryId: number) => {
+    const handleSubcategoryChange = (subcategoryId: number | null) => {
         setSelectedSubcategoryId(subcategoryId);
         setSelectedItemTypeId(null);
         setItemTypes([]);
@@ -156,15 +176,20 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        e.stopPropagation(); // Prevent event bubbling
+        e.stopPropagation();
 
-        // Strict double-submit prevention
         if (loading) {
             console.log('⚠️ Already submitting, blocked duplicate request');
             return;
         }
 
-        if (!selectedItemTypeId) {
+        // ✅ UPDATED VALIDATION: Mixed category only needs categoryId
+        if (!selectedCategoryId) {
+            alert('الرجاء اختيار التصنيف');
+            return;
+        }
+
+        if (!isMixedCategory && !selectedItemTypeId) {
             alert('الرجاء اختيار التصنيف الكامل (التصنيف الرئيسي → الفرعي → نوع الصنف)');
             return;
         }
@@ -172,35 +197,31 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
         setLoading(true);
 
         try {
-            // Create base payload without initialStock first
             const { initialStock, ...baseData } = formData;
-            
+
+            // ✅ UPDATED PAYLOAD: null itemTypeId for Mixed
             const payload = {
                 ...baseData,
-                itemTypeId: selectedItemTypeId,
+                itemTypeId: isMixedCategory ? null : selectedItemTypeId,
                 categoryId: selectedCategoryId,
             };
 
             console.log('✅ Submitting product:', payload);
 
             if (product) {
-                // Update: Send payload WITHOUT initialStock
                 await apiClient.patch(`/products/${product.id}`, payload);
             } else {
-                // Create: Include initialStock
                 await apiClient.post('/products', { ...payload, initialStock });
             }
 
             console.log('✅ Product saved successfully!');
 
-            // Success - close immediately
             onSave();
             onClose();
 
         } catch (error: any) {
             console.error('❌ Error saving product:', error);
 
-            // Better error handling
             let errorMessage = 'فشل حفظ المنتج';
 
             if (error.response?.data?.message) {
@@ -212,14 +233,9 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
             }
 
             alert(errorMessage);
-
-            // Only re-enable on error
             setLoading(false);
         }
-        // Don't set loading to false on success
     };
-
-
 
     return (
         <div
@@ -235,7 +251,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                 justifyContent: 'center',
                 zIndex: 1000,
             }}
-            onClick={onClose}
+        //onClick={onClose}
         >
             <div
                 style={{
@@ -270,7 +286,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     {/* ========================================== */}
-                    {/* HIERARCHY SELECTION (3 LEVELS) */}
+                    {/* HIERARCHY SELECTION */}
                     {/* ========================================== */}
                     <div
                         style={{
@@ -281,10 +297,10 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                         }}
                     >
                         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.125rem', fontWeight: '600' }}>
-                            🏷️ التصنيف (3 مستويات)
+                            🏷️ التصنيف
                         </h3>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMixedCategory ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
                             {/* Category */}
                             <div>
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
@@ -292,7 +308,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                                 </label>
                                 <select
                                     value={selectedCategoryId || ''}
-                                    onChange={(e) => handleCategoryChange(Number(e.target.value))}
+                                    onChange={(e) => handleCategoryChange(Number(e.target.value) || null)}
                                     required
                                     style={{
                                         width: '100%',
@@ -313,73 +329,101 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                                 </select>
                             </div>
 
-                            {/* Subcategory */}
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
-                                    2️⃣ التصنيف الفرعي *
-                                </label>
-                                <select
-                                    value={selectedSubcategoryId || ''}
-                                    onChange={(e) => handleSubcategoryChange(Number(e.target.value))}
-                                    required
-                                    disabled={!selectedCategoryId || subcategories.length === 0}
-                                    style={{
-                                        width: '100%',
-                                        padding: '0.75rem',
-                                        border: '2px solid rgba(255,255,255,0.3)',
-                                        borderRadius: '0.375rem',
-                                        fontSize: '0.95rem',
-                                        background: 'rgba(255,255,255,0.9)',
-                                        color: '#1f2937',
-                                        opacity: !selectedCategoryId ? 0.6 : 1,
-                                    }}
-                                >
-                                    <option value="">
-                                        {!selectedCategoryId ? 'اختر التصنيف أولاً...' : 'اختر التصنيف الفرعي...'}
-                                    </option>
-                                    {subcategories.map((sub) => (
-                                        <option key={sub.id} value={sub.id}>
-                                            {sub.nameAr || sub.name}
+                            {/* ✅ Subcategory - Hidden for Mixed */}
+                            {!isMixedCategory && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
+                                        2️⃣ التصنيف الفرعي *
+                                    </label>
+                                    <select
+                                        value={selectedSubcategoryId || ''}
+                                        onChange={(e) => handleSubcategoryChange(Number(e.target.value) || null)}
+                                        required
+                                        disabled={!selectedCategoryId || subcategories.length === 0}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.75rem',
+                                            border: '2px solid rgba(255,255,255,0.3)',
+                                            borderRadius: '0.375rem',
+                                            fontSize: '0.95rem',
+                                            background: 'rgba(255,255,255,0.9)',
+                                            color: '#1f2937',
+                                            opacity: !selectedCategoryId ? 0.6 : 1,
+                                        }}
+                                    >
+                                        <option value="">
+                                            {!selectedCategoryId ? 'اختر التصنيف أولاً...' : 'اختر التصنيف الفرعي...'}
                                         </option>
-                                    ))}
-                                </select>
-                            </div>
+                                        {subcategories.map((sub) => (
+                                            <option key={sub.id} value={sub.id}>
+                                                {sub.nameAr || sub.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
-                            {/* Item Type */}
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
-                                    3️⃣ نوع الصنف *
-                                </label>
-                                <select
-                                    value={selectedItemTypeId || ''}
-                                    onChange={(e) => setSelectedItemTypeId(Number(e.target.value))}
-                                    required
-                                    disabled={!selectedSubcategoryId || itemTypes.length === 0}
-                                    style={{
-                                        width: '100%',
-                                        padding: '0.75rem',
-                                        border: '2px solid rgba(255,255,255,0.3)',
-                                        borderRadius: '0.375rem',
-                                        fontSize: '0.95rem',
-                                        background: 'rgba(255,255,255,0.9)',
-                                        color: '#1f2937',
-                                        opacity: !selectedSubcategoryId ? 0.6 : 1,
-                                    }}
-                                >
-                                    <option value="">
-                                        {!selectedSubcategoryId ? 'اختر التصنيف الفرعي أولاً...' : 'اختر نوع الصنف...'}
-                                    </option>
-                                    {itemTypes.map((type) => (
-                                        <option key={type.id} value={type.id}>
-                                            {type.nameAr || type.name}
+                            {/* ✅ Item Type - Hidden for Mixed */}
+                            {!isMixedCategory && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
+                                        3️⃣ نوع الصنف *
+                                    </label>
+                                    <select
+                                        value={selectedItemTypeId || ''}
+                                        onChange={(e) => setSelectedItemTypeId(Number(e.target.value) || null)}
+                                        required
+                                        disabled={!selectedSubcategoryId || itemTypes.length === 0}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.75rem',
+                                            border: '2px solid rgba(255,255,255,0.3)',
+                                            borderRadius: '0.375rem',
+                                            fontSize: '0.95rem',
+                                            background: 'rgba(255,255,255,0.9)',
+                                            color: '#1f2937',
+                                            opacity: !selectedSubcategoryId ? 0.6 : 1,
+                                        }}
+                                    >
+                                        <option value="">
+                                            {!selectedSubcategoryId ? 'اختر التصنيف الفرعي أولاً...' : 'اختر نوع الصنف...'}
                                         </option>
-                                    ))}
-                                </select>
-                            </div>
+                                        {itemTypes.map((type) => (
+                                            <option key={type.id} value={type.id}>
+                                                {type.nameAr || type.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Breadcrumb Preview */}
-                        {selectedCategoryId && (
+                        {/* ✅ Mixed Category Indicator */}
+                        {isMixedCategory && (
+                            <div style={{
+                                marginTop: '1rem',
+                                padding: '1rem',
+                                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                                border: '2px solid #f59e0b',
+                                borderRadius: '0.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                            }}>
+                                <span style={{ fontSize: '28px' }}>🔧</span>
+                                <div>
+                                    <div style={{ fontWeight: '700', color: '#92400e', fontSize: '1rem' }}>
+                                        منتج متنوع (Mixed Product)
+                                    </div>
+                                    <div style={{ fontSize: '0.875rem', color: '#78350f', marginTop: '4px' }}>
+                                        ✓ لا يحتاج إلى فئة فرعية أو نوع صنف - يمكنك الانتقال مباشرة لملء بيانات المنتج
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Breadcrumb Preview - Only for hierarchical */}
+                        {!isMixedCategory && selectedCategoryId && (
                             <div
                                 style={{
                                     marginTop: '1rem',
@@ -537,7 +581,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             </label>
                             <input
                                 type="number"
-                                step="0.01"
+                                step="1"
                                 value={formData.cost}
                                 onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
                                 required
@@ -558,7 +602,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             </label>
                             <input
                                 type="number"
-                                step="0.01"
+                                step="1"
                                 value={formData.priceRetail}
                                 onChange={(e) => setFormData({ ...formData, priceRetail: Number(e.target.value) })}
                                 required
@@ -579,7 +623,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             </label>
                             <input
                                 type="number"
-                                step="0.01"
+                                step="1"
                                 value={formData.priceWholesale}
                                 onChange={(e) => setFormData({ ...formData, priceWholesale: Number(e.target.value) })}
                                 style={{
@@ -625,7 +669,8 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                                 }}
                             />
                         </div>
-                        {/* ✅ UPDATED INITIAL STOCK FIELD */}
+
+                        {/* Initial Stock */}
                         <div>
                             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
                                 📦 {product ? 'الكمية الحالية في المخزون' : 'الكمية الابتدائية (عند الإنشاء فقط)'}
@@ -635,7 +680,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                                 value={formData.initialStock}
                                 onChange={(e) => setFormData({ ...formData, initialStock: Number(e.target.value) })}
                                 min="0"
-                                disabled={!!product} // Disabled when editing
+                                disabled={!!product}
                                 placeholder={product ? 'للتعديل استخدم صفحة جرد المخزون' : 'أدخل الكمية الابتدائية'}
                                 style={{
                                     width: '100%',
@@ -695,12 +740,11 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                                 fontWeight: '600',
                                 fontSize: '1rem',
                                 opacity: loading ? 0.6 : 1,
-                                pointerEvents: loading ? 'none' : 'auto', // 👈 IMPORTANT: Prevents all clicks
+                                pointerEvents: loading ? 'none' : 'auto',
                             }}
                         >
                             {loading ? 'جاري الحفظ...' : product ? 'تحديث المنتج' : 'حفظ المنتج'}
                         </button>
-
 
                         <button
                             type="button"
