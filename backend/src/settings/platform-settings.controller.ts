@@ -1,9 +1,7 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Controller, Get, Put, Post, Delete, Body, Param } from '@nestjs/common';
 import { PlatformSettingsService } from './platform-settings.service';
 
 @Controller('settings/platforms')
-//@UseGuards(JwtAuthGuard)
 export class PlatformSettingsController {
     constructor(private platformSettingsService: PlatformSettingsService) { }
 
@@ -17,32 +15,34 @@ export class PlatformSettingsController {
         return this.platformSettingsService.getPlatform(platform);
     }
 
-    // 🆕 Create new platform
     @Post()
     createPlatform(
-        @Body() body: {
+        @Body()
+        body: {
             platform: string;
             name: string;
             icon?: string;
             taxRate: number;
             commission: number;
-            active: boolean
-        }
+            shippingFee: number; // ✅ ADD THIS
+            active: boolean;
+        },
     ) {
         return this.platformSettingsService.upsertPlatform(body);
     }
 
-    // Update existing platform
     @Put(':platform')
     updatePlatform(
         @Param('platform') platform: string,
-        @Body() body: {
+        @Body()
+        body: {
             name?: string;
             icon?: string;
             taxRate: number;
             commission: number;
-            active: boolean
-        }
+            shippingFee: number; // ✅ ADD THIS
+            active: boolean;
+        },
     ) {
         return this.platformSettingsService.upsertPlatform({
             platform,
@@ -50,7 +50,6 @@ export class PlatformSettingsController {
         });
     }
 
-    // 🆕 Delete platform
     @Delete(':platform')
     deletePlatform(@Param('platform') platform: string) {
         return this.platformSettingsService.deletePlatform(platform);

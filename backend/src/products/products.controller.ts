@@ -25,6 +25,7 @@ import {
 import { BulkPriceUpdateDto, CategoryPriceUpdateDto } from './dto/price-management.dto';
 import { PriceManagementService } from './price-management.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { HierarchyPriceUpdateDto } from './dto/price-management.dto';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
@@ -209,6 +210,13 @@ export class ProductsController {
   // ============================================
   // PRICE MANAGEMENT ENDPOINTS
   // ============================================
+  @Put('prices/hierarchy')
+  updatePricesByHierarchy(@Body() dto: HierarchyPriceUpdateDto, @Request() req: any) {
+    return this.priceManagementService.updatePricesByHierarchy({
+      ...dto,
+      userId: req.user?.id || 1,
+    });
+  }
 
   @Post('prices/bulk-update')
   bulkUpdatePrices(@Body() dto: BulkPriceUpdateDto, @Request() req: any) {

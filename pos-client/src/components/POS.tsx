@@ -27,6 +27,8 @@ interface CartItem extends Product {
     discount?: number;
     price: number;
     lineTotal: number;
+    priceType?: 'RETAIL' | 'WHOLESALE' | 'CUSTOM';  // ✅ NEW
+    customPrice?: number;  // ✅ NEW
 }
 
 interface PlatformConfig {
@@ -36,6 +38,7 @@ interface PlatformConfig {
     icon: string;
     tax: number;
     platform: number;
+    shippingFee: number;
     btnText: string;
     active: boolean;
 }
@@ -50,6 +53,11 @@ function POS() {
     const [browserProducts, setBrowserProducts] = useState<Product[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [categories, setCategories] = useState<any[]>([]);
+    const [editingPrice, setEditingPrice] = useState<{
+        productId: number;
+        currentPrice: number;
+        cost: number;
+    } | null>(null);
 
 
 
@@ -77,6 +85,58 @@ function POS() {
     const [showCustomerModal, setShowCustomerModal] = useState(false);
     const [customerSearch, setCustomerSearch] = useState('');
     const [customersList, setCustomersList] = useState<Customer[]>([]);
+
+    // Toggle between retail and wholesale price
+    const togglePriceType = (productId: number, newType: 'RETAIL' | 'WHOLESALE') => {
+        setCart(cart.map(item => {
+            if (item.id === productId) {
+                let newPrice = newType === 'RETAIL'
+                    ? Number(item.priceRetail)
+                    : Number(item.priceWholesale || item.priceRetail);
+
+                return {
+                    ...item,
+                    priceType: newType,
+                    price: newPrice,
+                    lineTotal: newPrice * item.qty,
+                    customPrice: undefined
+                };
+            }
+            return item;
+        }));
+    };
+
+    // Update to custom price with validation
+    const updateCustomPrice = (productId: number, newPrice: number) => {
+        const item = cart.find(i => i.id === productId);
+        if (!item) return;
+
+        // ✅ Validate: price cannot be below cost (but don't show the cost!)
+        if (newPrice < Number(item.cost)) {
+            playBeep('error');
+            setMessage('❌ السعر المدخل أقل من الحد المسموح به'); // Generic message without showing cost
+            return;
+        }
+
+        setCart(cart.map(i => {
+            if (i.id === productId) {
+                return {
+                    ...i,
+                    price: newPrice,
+                    priceType: 'CUSTOM',
+                    customPrice: newPrice,
+                    lineTotal: newPrice * i.qty
+                };
+            }
+            return i;
+        }));
+
+        setEditingPrice(null);
+        setMessage(`✅ تم تحديث السعر إلى ${newPrice.toFixed(2)} ر.س`);
+    };
+
+
+
 
     // ✅ Load platforms from database on mount
     useEffect(() => {
@@ -148,6 +208,7 @@ function POS() {
                         icon: platform.icon || '📦',
                         tax: Number(platform.taxRate) / 100,
                         platform: Number(platform.commission) / 100,
+                        shippingFee: Number(platform.shippingFee) || 0,
                         btnText: platform.name,
                         active: platform.active,
                     };
@@ -193,23 +254,38 @@ function POS() {
         }
     }, [showCustomerModal]);
 
-    // Recalculate cart prices when customer changes
+    // ✅ FIXED: Recalculate cart prices when customer changes (but preserve custom prices)
+    // ✅ FIXED: Preserve custom prices and priceType when customer changes
     useEffect(() => {
         if (cart.length > 0) {
             const newCart = cart.map(item => {
+                // ⚠️ If item has a custom price, DON'T CHANGE IT!
+                if (item.priceType === 'CUSTOM' && item.customPrice !== undefined) {
+                    return item; // Keep everything unchanged
+                }
+
+                // Otherwise, update based on customer type
                 let price = Number(item.priceRetail);
+                let priceType: 'RETAIL' | 'WHOLESALE' = 'RETAIL';
+
                 if (selectedCustomer?.type === 'WHOLESALE' && item.priceWholesale) {
                     price = Number(item.priceWholesale);
+                    priceType = 'WHOLESALE';
                 }
+
                 return {
                     ...item,
                     price,
-                    lineTotal: price * item.qty
+                    priceType,
+                    lineTotal: price * item.qty,
+                    customPrice: undefined // Clear custom price when not custom
                 };
             });
             setCart(newCart);
         }
     }, [selectedCustomer]);
+
+
 
     const playBeep = (type: 'success' | 'error') => {
         const audio = new Audio(
@@ -257,27 +333,27 @@ function POS() {
     };
 
     const addToCart = (product: Product) => {
-        // ✅ Check if product has stock information
         const availableStock = product.stock !== undefined ? product.stock : Infinity;
 
-        // ✅ Check if stock is 0
         if (availableStock === 0) {
             playBeep('error');
             setMessage('❌ المنتج غير متوفر في المخزن');
             return;
         }
 
+        // ✅ Set initial price based on customer type
         let appliedPrice = Number(product.priceRetail);
+        let priceType: 'RETAIL' | 'WHOLESALE' = 'RETAIL';
+
         if (selectedCustomer?.type === 'WHOLESALE' && product.priceWholesale) {
             appliedPrice = Number(product.priceWholesale);
+            priceType = 'WHOLESALE';
         }
 
         const existingItem = cart.find(item => item.id === product.id);
 
         if (existingItem) {
-            // ✅ Check if we can increase quantity
             const newQty = existingItem.qty + 1;
-
             if (newQty > availableStock) {
                 playBeep('error');
                 setMessage(`❌ المخزون المتاح فقط ${availableStock} وحدة`);
@@ -293,6 +369,7 @@ function POS() {
             setCart([...cart, {
                 ...product,
                 price: appliedPrice,
+                priceType: priceType,
                 qty: 1,
                 lineTotal: appliedPrice,
             }]);
@@ -303,6 +380,8 @@ function POS() {
         setSearchQuery('');
         setSearchResults([]);
     };
+
+
 
 
     const updateQty = (productId: number, newQty: number) => {
@@ -333,16 +412,7 @@ function POS() {
 
 
     const calculateTotals = () => {
-        if (!CHANNELS[activeTab]) {
-            return {
-                subtotal: 0,
-                subtotalAfterDiscount: 0,
-                discountAmount: 0,
-                taxAmount: 0,
-                platformAmount: 0,
-                finalTotal: 0
-            };
-        }
+        if (!CHANNELS[activeTab]) return { subtotal: 0, subtotalAfterDiscount: 0, discountAmount: 0, taxAmount: 0, platformAmount: 0, shippingFee: 0, finalTotal: 0 };
 
         const config = CHANNELS[activeTab];
         const subtotal = cart.reduce((sum, item) => sum + item.lineTotal, 0);
@@ -350,17 +420,14 @@ function POS() {
         const subtotalAfterDiscount = subtotal - discountAmount;
         const taxAmount = subtotalAfterDiscount * config.tax;
         const platformAmount = subtotalAfterDiscount * config.platform;
-        const finalTotal = subtotalAfterDiscount + taxAmount + platformAmount;
+        const shippingFee = config.shippingFee;
 
-        return {
-            subtotal,
-            subtotalAfterDiscount,
-            discountAmount,
-            taxAmount,
-            platformAmount,
-            finalTotal
-        };
+        // ✅ FIX: Don't add commission to customer's bill
+        const finalTotal = subtotalAfterDiscount + taxAmount;
+
+        return { subtotal, subtotalAfterDiscount, discountAmount, taxAmount, platformAmount, shippingFee, finalTotal };
     };
+
 
     const handleApplyDiscount = () => {
         setAppliedDiscount(discountValue);
@@ -374,7 +441,7 @@ function POS() {
         }
 
         if (!CHANNELS[activeTab]) {
-            setMessage('⚠️ يرجى اختيار منصة');
+            setMessage('⚠️ يرجى اختيار قناة البيع');
             return;
         }
 
@@ -386,27 +453,33 @@ function POS() {
 
             const saleData = {
                 branchId: user.branchId || user.branch?.id || 1,
-                channel: CHANNELS[activeTab].code,  // ✅ CHANGED: Send the original code
+                channel: CHANNELS[activeTab].code,
                 customerId: selectedCustomer?.id || null,
                 lines: cart.map(item => ({
                     productId: item.id,
                     qty: item.qty,
-                    unitPrice: parseFloat(item.price.toFixed(2)),
+                    unitPrice: parseFloat(item.price.toFixed(2)), // ✅ This uses item.price (which includes custom/retail/wholesale)
                     taxRate: parseFloat((config.tax * 100).toFixed(2)),
                     lineDiscount: 0
                 })),
                 paymentMethod: paymentMethod,
                 totalDiscount: parseFloat(totals.discountAmount.toFixed(2)),
                 platformCommission: parseFloat(totals.platformAmount.toFixed(2)),
-                notes: `${config.name} | ${paymentMethodName}`
+                shippingFee: parseFloat(totals.shippingFee.toFixed(2)),
+                notes: `${config.name} - ${paymentMethodName}`
             };
 
+            // ✅ DEBUG: Log to verify correct prices are being sent
+            console.log('=== CHECKOUT DEBUG ===');
+            console.log('Cart items with prices:');
+            cart.forEach(item => {
+                console.log(`${item.nameAr}: ${item.price.toFixed(2)} (${item.priceType})`);
+            });
+            console.log('Sale Data:', saleData);
+            console.log('====================');
 
-            console.log('Sending Sale Data:', saleData);
             const response = await apiClient.post('/pos/sales', saleData);
-
             playBeep('success');
-            // ✅ FIXED: response is now the direct data
             setMessage(`✅ تمت العملية بنجاح! رقم الفاتورة: ${response.invoiceNo}`);
 
             // Reset
@@ -419,11 +492,12 @@ function POS() {
         } catch (error: any) {
             console.error(error);
             playBeep('error');
-            setMessage(`❌ ${error.response?.data?.message || 'حدث خطأ'}`);
+            setMessage('❌ ' + (error.response?.data?.message || 'فشلت العملية'));
         } finally {
             setLoading(false);
         }
     };
+
 
 
     const handleLogout = () => {
@@ -539,6 +613,14 @@ function POS() {
                             <div className="info-item">
                                 <span className="info-label">العمولة:</span>
                                 <span className="info-value">{(CHANNELS[activeTab].platform * 100).toFixed(0)}%</span>
+                            </div>
+                        )}
+
+                        {/* ✅ NEW: Shipping Fee */}
+                        {CHANNELS[activeTab].shippingFee > 0 && (
+                            <div className="info-item">
+                                <span className="info-label">الشحن:</span>
+                                <span className="info-value">{CHANNELS[activeTab].shippingFee.toFixed(2)} ر.س</span>
                             </div>
                         )}
                     </div>
@@ -665,32 +747,499 @@ function POS() {
                         <>
                             <div className="cart-items-list">
                                 {cart.map(item => (
-                                    <div key={item.id} className="cart-item">
-                                        <div className="item-main">
-                                            <div className="item-name">{item.nameAr || item.nameEn}</div>
-                                            <div className="item-meta">
+                                    <div key={item.id} style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '16px',
+                                        padding: '16px',
+                                        background: 'white',
+                                        borderRadius: '12px',
+                                        marginBottom: '12px',
+                                        border: '1px solid #e2e8f0',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                                        transition: 'all 0.2s'
+                                    }}>
+
+                                        {/* 1️⃣ Product Info + Price Type Selector */}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <strong style={{
+                                                display: 'block',
+                                                marginBottom: '6px',
+                                                fontSize: '15px',
+                                                color: '#1e293b'
+                                            }}>
+                                                {item.nameAr || item.nameEn}
+                                            </strong>
+
+                                            <small style={{
+                                                color: '#64748b',
+                                                display: 'block',
+                                                marginBottom: '10px',
+                                                fontSize: '13px'
+                                            }}>
                                                 باركود: {item.barcode} | السعر: {item.price.toFixed(2)} ر.س
-                                                {item.stock !== undefined && <span style={{ marginRight: '10px', color: item.stock <= 0 ? 'var(--danger)' : 'var(--success)' }}>
+                                            </small>
+
+                                            {item.stock !== undefined && (
+                                                <small style={{
+                                                    color: item.stock > 10 ? '#10b981' : '#f59e0b',
+                                                    fontWeight: '600',
+                                                    fontSize: '12px',
+                                                    display: 'block',
+                                                    marginBottom: '10px'
+                                                }}>
                                                     (المخزون: {item.stock})
-                                                </span>}
+                                                </small>
+                                            )}
+
+                                            {/* ✅ PRICE TYPE SELECTOR + CUSTOM PRICE BUTTON */}
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '8px',
+                                                marginTop: '12px',
+                                                alignItems: 'center',
+                                                flexWrap: 'wrap'
+                                            }}>
+                                                {/* Radio Buttons for Retail/Wholesale */}
+                                                <div style={{
+                                                    display: 'inline-flex',
+                                                    background: '#f1f5f9',
+                                                    padding: '3px',
+                                                    borderRadius: '8px',
+                                                    gap: '3px'
+                                                }}>
+                                                    {/* Retail Button */}
+                                                    <label style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        padding: '6px 14px',
+                                                        borderRadius: '6px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '13px',
+                                                        fontWeight: '500',
+                                                        background: item.priceType === 'RETAIL' ? '#3b82f6' : 'transparent',
+                                                        color: item.priceType === 'RETAIL' ? 'white' : '#64748b',
+                                                        transition: 'all 0.2s'
+                                                    }}>
+                                                        <input
+                                                            type="radio"
+                                                            checked={item.priceType === 'RETAIL'}
+                                                            onChange={() => togglePriceType(item.id, 'RETAIL')}
+                                                            style={{ display: 'none' }}
+                                                        />
+                                                        <span>💰</span> قطاعي ({Number(item.priceRetail).toFixed(2)})
+                                                    </label>
+
+                                                    {/* Wholesale Button (if available) */}
+                                                    {item.priceWholesale && (
+                                                        <label style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '6px 14px',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '13px',
+                                                            fontWeight: '500',
+                                                            background: item.priceType === 'WHOLESALE' ? '#3b82f6' : 'transparent',
+                                                            color: item.priceType === 'WHOLESALE' ? 'white' : '#64748b',
+                                                            transition: 'all 0.2s'
+                                                        }}>
+                                                            <input
+                                                                type="radio"
+                                                                checked={item.priceType === 'WHOLESALE'}
+                                                                onChange={() => togglePriceType(item.id, 'WHOLESALE')}
+                                                                style={{ display: 'none' }}
+                                                            />
+                                                            <span>📦</span> جملة ({Number(item.priceWholesale).toFixed(2)})
+                                                        </label>
+                                                    )}
+                                                </div>
+
+                                                {/* Custom Price Button */}
+                                                <button
+                                                    onClick={() => setEditingPrice({
+                                                        productId: item.id,
+                                                        currentPrice: item.price,
+                                                        cost: Number(item.cost)
+                                                    })}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        padding: '6px 14px',
+                                                        background: item.priceType === 'CUSTOM'
+                                                            ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)'
+                                                            : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '8px',
+                                                        fontSize: '13px',
+                                                        cursor: 'pointer',
+                                                        fontWeight: '500',
+                                                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)';
+                                                    }}
+                                                >
+                                                    {item.priceType === 'CUSTOM' ? '✏️' : '⚙️'}
+                                                    {item.priceType === 'CUSTOM' ? 'سعر مخصص' : 'تعديل السعر'}
+                                                </button>
                                             </div>
                                         </div>
 
-                                        <div className="item-quantity">
-                                            <button className="qty-control" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
-                                            <div className="qty-val">{item.qty}</div>
-                                            <button className="qty-control" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+                                        {/* 2️⃣ Improved Quantity Controls */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            background: '#f8fafc',
+                                            padding: '6px',
+                                            borderRadius: '12px',
+                                            border: '2px solid #e2e8f0',
+                                            flexShrink: 0
+                                        }}>
+                                            {/* Minus Button */}
+                                            <button
+                                                onClick={() => updateQty(item.id, item.qty - 1)}
+                                                style={{
+                                                    width: '36px',
+                                                    height: '36px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '10px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '20px',
+                                                    fontWeight: '700',
+                                                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+                                                    transition: 'all 0.2s',
+                                                    lineHeight: '1'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.4)';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.transform = 'scale(1)';
+                                                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.3)';
+                                                }}
+                                            >
+                                                −
+                                            </button>
+
+                                            {/* Quantity Display */}
+                                            <span style={{
+                                                minWidth: '45px',
+                                                textAlign: 'center',
+                                                fontSize: '18px',
+                                                fontWeight: '700',
+                                                color: '#1e293b',
+                                                padding: '0 8px'
+                                            }}>
+                                                {item.qty}
+                                            </span>
+
+                                            {/* Plus Button */}
+                                            <button
+                                                onClick={() => updateQty(item.id, item.qty + 1)}
+                                                style={{
+                                                    width: '36px',
+                                                    height: '36px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '10px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '20px',
+                                                    fontWeight: '700',
+                                                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                                                    transition: 'all 0.2s',
+                                                    lineHeight: '1'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.transform = 'scale(1)';
+                                                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)';
+                                                }}
+                                            >
+                                                +
+                                            </button>
                                         </div>
 
-                                        <div className="item-pricing">
-                                            <div className="item-line-total">{item.lineTotal.toFixed(2)} ر.س</div>
+                                        {/* 3️⃣ Line Total Price */}
+                                        <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-end',
+                                            justifyContent: 'center',
+                                            minWidth: '100px',
+                                            flexShrink: 0
+                                        }}>
+                                            <div style={{
+                                                fontSize: '20px',
+                                                fontWeight: '800',
+                                                color: '#10b981',
+                                                lineHeight: '1.2',
+                                                marginBottom: '4px'
+                                            }}>
+                                                {item.lineTotal.toFixed(2)}
+                                            </div>
+                                            <div style={{
+                                                fontSize: '12px',
+                                                color: '#64748b',
+                                                fontWeight: '500'
+                                            }}>
+                                                ر.س
+                                            </div>
                                         </div>
 
-                                        <button onClick={() => updateQty(item.id, 0)} className="delete-btn">
+                                        {/* 4️⃣ Delete Button */}
+                                        <button
+                                            onClick={() => updateQty(item.id, 0)}
+                                            style={{
+                                                width: '40px',
+                                                height: '40px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: '#fee2e2',
+                                                color: '#ef4444',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                cursor: 'pointer',
+                                                flexShrink: 0,
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = '#ef4444';
+                                                e.currentTarget.style.color = 'white';
+                                                e.currentTarget.style.transform = 'scale(1.05)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = '#fee2e2';
+                                                e.currentTarget.style.color = '#ef4444';
+                                                e.currentTarget.style.transform = 'scale(1)';
+                                            }}
+                                        >
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
                                 ))}
+
+
+
+
+                                {/* ✅ NEW: Custom Price Edit Modal */}
+                                {/* ✅ IMPROVED: Custom Price Edit Modal - Without showing cost */}
+                                {editingPrice && (
+                                    <div
+                                        className="modal-overlay"
+                                        onClick={() => setEditingPrice(null)}
+                                        style={{ zIndex: 1000 }}
+                                    >
+                                        <div
+                                            className="modal-content"
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                                maxWidth: '420px',
+                                                padding: '28px',
+                                                borderRadius: '16px'
+                                            }}
+                                        >
+                                            {/* Header */}
+                                            <div style={{
+                                                textAlign: 'center',
+                                                marginBottom: '24px',
+                                                paddingBottom: '20px',
+                                                borderBottom: '2px solid #f1f5f9'
+                                            }}>
+                                                <div style={{
+                                                    width: '60px',
+                                                    height: '60px',
+                                                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                                    borderRadius: '50%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    margin: '0 auto 16px',
+                                                    fontSize: '28px'
+                                                }}>
+                                                    ⚙️
+                                                </div>
+                                                <h3 style={{
+                                                    margin: 0,
+                                                    fontSize: '22px',
+                                                    fontWeight: '700',
+                                                    color: '#1e293b'
+                                                }}>
+                                                    تعديل السعر
+                                                </h3>
+                                                <p style={{
+                                                    margin: '8px 0 0 0',
+                                                    fontSize: '14px',
+                                                    color: '#64748b'
+                                                }}>
+                                                    السعر الحالي: <strong>{editingPrice.currentPrice.toFixed(2)} ر.س</strong>
+                                                </p>
+                                            </div>
+
+                                            {/* ✅ WARNING: No cost shown, just generic message */}
+                                            <div style={{
+                                                marginBottom: '20px',
+                                                padding: '14px',
+                                                background: '#fef3c7',
+                                                borderRadius: '10px',
+                                                border: '1px solid #fbbf24'
+                                            }}>
+                                                <p style={{
+                                                    margin: 0,
+                                                    fontSize: '13px',
+                                                    color: '#92400e',
+                                                    textAlign: 'center',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '8px',
+                                                    fontWeight: '500'
+                                                }}>
+                                                    <span style={{ fontSize: '18px' }}>⚠️</span>
+                                                    يجب أن يكون السعر أعلى من الحد الأدنى المسموح به
+                                                </p>
+                                            </div>
+
+                                            <form onSubmit={(e) => {
+                                                e.preventDefault();
+                                                const form = e.target as HTMLFormElement;
+                                                const input = form.elements.namedItem('customPrice') as HTMLInputElement;
+                                                const newPrice = parseFloat(input.value);
+
+                                                if (newPrice && newPrice >= editingPrice.cost) {
+                                                    updateCustomPrice(editingPrice.productId, newPrice);
+                                                } else if (newPrice < editingPrice.cost) {
+                                                    playBeep('error');
+                                                    setMessage('❌ السعر المدخل أقل من الحد المسموح به');
+                                                }
+                                            }}>
+                                                {/* Price Input */}
+                                                <div style={{ marginBottom: '20px' }}>
+                                                    <label style={{
+                                                        display: 'block',
+                                                        marginBottom: '8px',
+                                                        fontSize: '14px',
+                                                        fontWeight: '600',
+                                                        color: '#475569'
+                                                    }}>
+                                                        السعر الجديد
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        name="customPrice"
+                                                        step="0.01"
+                                                        min="0"
+                                                        defaultValue={editingPrice.currentPrice}
+                                                        autoFocus
+                                                        required
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '14px 16px',
+                                                            fontSize: '18px',
+                                                            fontWeight: '600',
+                                                            border: '2px solid #e2e8f0',
+                                                            borderRadius: '10px',
+                                                            textAlign: 'center',
+                                                            outline: 'none',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onFocus={(e) => {
+                                                            e.target.style.borderColor = '#6366f1';
+                                                            e.target.style.boxShadow = '0 0 0 4px rgba(99, 102, 241, 0.1)';
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            e.target.style.borderColor = '#e2e8f0';
+                                                            e.target.style.boxShadow = 'none';
+                                                        }}
+                                                        placeholder="أدخل السعر الجديد"
+                                                    />
+                                                </div>
+
+                                                {/* Buttons */}
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditingPrice(null)}
+                                                        style={{
+                                                            flex: 1,
+                                                            padding: '13px',
+                                                            background: '#f1f5f9',
+                                                            color: '#475569',
+                                                            border: 'none',
+                                                            borderRadius: '10px',
+                                                            cursor: 'pointer',
+                                                            fontWeight: '600',
+                                                            fontSize: '15px',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = '#e2e8f0'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                                    >
+                                                        إلغاء
+                                                    </button>
+                                                    <button
+                                                        type="submit"
+                                                        style={{
+                                                            flex: 1,
+                                                            padding: '13px',
+                                                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '10px',
+                                                            cursor: 'pointer',
+                                                            fontWeight: '700',
+                                                            fontSize: '15px',
+                                                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                                                            transition: 'all 0.2s',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            gap: '6px'
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.4)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '18px' }}>✓</span> حفظ السعر
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                )}
+
+
+
                             </div>
 
                             <div className="checkout-footer">
@@ -729,12 +1278,23 @@ function POS() {
                                                 </div>
 
                                                 {/* 5️⃣ Platform Commission (if any) */}
+                                                {/* 5) Platform Commission - FOR INFORMATION ONLY */}
                                                 {totals.platformAmount > 0 && (
-                                                    <div className="summary-item">
-                                                        <span className="sum-label">العمولة ({(CHANNELS[activeTab].platform * 100).toFixed(0)}%):</span>
-                                                        <span className="sum-value plus">+{totals.platformAmount.toFixed(2)} ر.س</span>
+                                                    <div className="summary-item" style={{ opacity: 0.6, fontSize: '13px' }}>
+                                                        <span className="sum-label">📊 عمولة المنصة ({(CHANNELS[activeTab].platform * 100).toFixed(0)}%) (لا تُضاف للعميل)</span>
+                                                        <span className="sum-value" style={{ color: '#dc2626' }}> {totals.platformAmount.toFixed(2)} ر.س</span>
                                                     </div>
                                                 )}
+
+                                                {totals.shippingFee > 0 && (
+                                                    <div className="summary-item" style={{ opacity: 0.6, fontSize: '13px' }}>
+                                                        <span className="sum-label">شحن المنصة:</span>
+                                                        <span className="sum-value" style={{ color: '#dc2626' }}>
+                                                            {totals.shippingFee.toFixed(2)} ر.س
+                                                        </span>
+                                                    </div>
+                                                )}
+
                                             </div>
 
                                             {/* Payment Methods */}

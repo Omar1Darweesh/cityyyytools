@@ -23,6 +23,7 @@ export class PlatformSettingsService {
         icon?: string;
         taxRate: number;
         commission: number;
+        shippingFee: number; // ✅ ADD THIS
         active: boolean;
     }) {
         return this.prisma.platformSettings.upsert({
@@ -30,6 +31,7 @@ export class PlatformSettingsService {
             update: {
                 taxRate: data.taxRate,
                 commission: data.commission,
+                shippingFee: data.shippingFee, // ✅ ADD THIS
                 active: data.active,
                 ...(data.name && { name: data.name }),
                 ...(data.icon && { icon: data.icon }),
@@ -40,12 +42,12 @@ export class PlatformSettingsService {
                 icon: data.icon || '🏪',
                 taxRate: data.taxRate,
                 commission: data.commission,
+                shippingFee: data.shippingFee, // ✅ ADD THIS
                 active: data.active,
             },
         });
     }
 
-    // 🆕 Delete platform
     async deletePlatform(platform: string) {
         return this.prisma.platformSettings.delete({
             where: { platform },
@@ -59,13 +61,22 @@ export class PlatformSettingsService {
         return settings?.taxRate ? Number(settings.taxRate) : 15;
     }
 
+    // ✅ NEW METHOD
+    async getShippingFee(platform: string): Promise<number> {
+        const settings = await this.prisma.platformSettings.findUnique({
+            where: { platform },
+        });
+        return settings?.shippingFee ? Number(settings.shippingFee) : 0;
+    }
+
     async initializeDefaultPlatforms() {
         const platforms = [
-            { platform: 'NORMAL', name: 'عادي', icon: '🏪', taxRate: 15, commission: 0, active: true },
-            { platform: 'NOON', name: 'نون', icon: '🌙', taxRate: 15, commission: 12, active: true },
-            { platform: 'AMAZON', name: 'أمازون', icon: '📦', taxRate: 15, commission: 15, active: true },
-            { platform: 'SALLA', name: 'سلة', icon: '🛍️', taxRate: 15, commission: 8, active: true },
-            { platform: 'ZID', name: 'زد', icon: '⚡', taxRate: 15, commission: 8, active: true },
+            { platform: 'offline', name: 'offline', icon: '🏪', taxRate: 0, commission: 0, shippingFee: 0, active: true },
+            { platform: 'Social', name: 'Social', icon: '📱', taxRate: 20, commission: 20, shippingFee: 0, active: true },
+            { platform: 'Noon', name: 'Noon', icon: '🌙', taxRate: 70, commission: 20, shippingFee: 0, active: true },
+            { platform: 'pogba', name: 'pogba', icon: '⚽', taxRate: 59, commission: 3, shippingFee: 0, active: true },
+            { platform: 'Amazon', name: 'Amazon', icon: '📦', taxRate: 15, commission: 0, shippingFee: 0, active: true },
+            { platform: 'Jumia', name: 'Jumia', icon: '🛍️', taxRate: 63, commission: 80, shippingFee: 0, active: true },
         ];
 
         for (const platform of platforms) {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ProductAuditService } from './product-audit.service';
 import { AuditAction } from '@prisma/client';
@@ -7,7 +7,7 @@ import { AuditAction } from '@prisma/client';
 export class PriceManagementService {
     constructor(
         private prisma: PrismaService,
-        private productAudit: ProductAuditService, // ✅ ADD THIS
+        private productAudit: ProductAuditService,
     ) { }
 
     async bulkUpdatePrices(data: {
@@ -23,14 +23,12 @@ export class PriceManagementService {
             const results = [];
 
             for (const update of data.updates) {
-                // Get current product with all fields
                 const product = await tx.product.findUnique({
                     where: { id: update.productId },
                 });
 
                 if (!product) continue;
 
-                // ✅ Store old data for audit
                 const oldData = {
                     id: product.id,
                     code: product.code,
@@ -86,14 +84,12 @@ export class PriceManagementService {
                     },
                 });
 
-                // ✅ Create new data for audit
                 const newData = {
                     ...oldData,
                     priceRetail: Number(updated.priceRetail),
                     priceWholesale: Number(updated.priceWholesale),
                 };
 
-                // ✅ Log audit (outside transaction to avoid blocking)
                 results.push({
                     updated,
                     oldData,
@@ -103,7 +99,6 @@ export class PriceManagementService {
 
             return results;
         }).then(async (results) => {
-            // ✅ Log all audits after transaction completes
             for (const result of results) {
                 try {
                     await this.productAudit.logChange(
@@ -117,7 +112,6 @@ export class PriceManagementService {
                     console.error(`Failed to log audit for product ${result.updated.id}:`, error);
                 }
             }
-
             return results.map(r => r.updated);
         });
     }
@@ -138,6 +132,88 @@ export class PriceManagementService {
         });
     }
 
+    // ✅ NEW: Enhanced hierarchy-based price update
+    async updatePricesByHierarchy(data: {
+        categoryId?: number;
+        subcategoryId?: number;
+        itemTypeId?: number;
+        adjustment: number;
+        adjustmentType: 'PERCENTAGE' | 'FIXED';
+        operation: 'INCREASE' | 'DECREASE';
+        priceType: 'RETAIL' | 'WHOLESALE' | 'BOTH';
+        userId: number;
+        reason?: string;
+    }) {
+        // Build WHERE clause based on hierarchy
+        const where: any = { active: true };
+
+        if (data.itemTypeId) {
+            where.itemTypeId = data.itemTypeId;
+        } else if (data.subcategoryId) {
+            where.itemType = {
+                subcategoryId: data.subcategoryId,
+            };
+        } else if (data.categoryId) {
+            where.OR = [
+                { categoryId: data.categoryId },
+                {
+                    itemType: {
+                        subcategory: {
+                            categoryId: data.categoryId,
+                        },
+                    },
+                },
+            ];
+        } else {
+            throw new BadRequestException('Must provide categoryId, subcategoryId, or itemTypeId');
+        }
+
+        // Fetch products
+        const products = await this.prisma.product.findMany({ where });
+
+        if (products.length === 0) {
+            return { updated: 0, products: [] };
+        }
+
+        // Calculate new prices
+        const updates = products.map(product => {
+            const adjustmentValue = data.operation === 'DECREASE' ? -Math.abs(data.adjustment) : Math.abs(data.adjustment);
+
+            const update: any = { productId: product.id };
+
+            if (data.priceType === 'RETAIL' || data.priceType === 'BOTH') {
+                const currentPrice = Number(product.priceRetail);
+                const newPrice = data.adjustmentType === 'PERCENTAGE'
+                    ? currentPrice * (1 + adjustmentValue / 100)
+                    : currentPrice + adjustmentValue;
+                update.priceRetail = Math.max(0, Math.round(newPrice * 100) / 100);
+            }
+
+            if (data.priceType === 'WHOLESALE' || data.priceType === 'BOTH') {
+                const currentPrice = Number(product.priceWholesale);
+                const newPrice = data.adjustmentType === 'PERCENTAGE'
+                    ? currentPrice * (1 + adjustmentValue / 100)
+                    : currentPrice + adjustmentValue;
+                update.priceWholesale = Math.max(0, Math.round(newPrice * 100) / 100);
+            }
+
+            return update;
+        });
+
+        // Execute bulk update
+        const updated = await this.bulkUpdatePrices({
+            updates,
+            userId: data.userId,
+            reason: data.reason,
+        });
+
+        return {
+            updated: updated.length,
+            products: updated,
+        };
+    }
+
+    // Keep for backward compatibility
     async updatePricesByCategory(data: {
         categoryId: number;
         adjustment: number;

@@ -18,6 +18,7 @@ export class SalesService {
       notes,
       channel,
       platformCommission = 0,
+      shippingFee = 0, // ✅ NEW: Add shipping fee
     } = createSaleDto;
 
     // Find default stock location if not provided
@@ -30,6 +31,7 @@ export class SalesService {
       if (!defaultLocation) {
         throw new BadRequestException('No active stock location found for this branch');
       }
+
       locationId = defaultLocation.id;
     }
 
@@ -76,7 +78,7 @@ export class SalesService {
     }
 
     // Step 4: Calculate final total
-    const total = subtotalAfterDiscount + totalTax + platformCommission;
+    const total = subtotalAfterDiscount + totalTax;
 
     // ✅ Step 5: Calculate Profit
     let costOfGoods = 0;
@@ -85,21 +87,36 @@ export class SalesService {
         where: { id: line.productId },
         select: { cost: true },
       });
+
       if (product && product.cost) {
-        // ✅ Convert Decimal to number
         costOfGoods += Number(product.cost) * line.qty;
       }
     }
 
-    const grossProfit = total - totalTax - costOfGoods;
-    const netProfit = grossProfit - platformCommission;
-    const profitMargin = total > 0 ? (netProfit / total) * 100 : 0;
+    // What customer actually paid (INCLUDING tax)
+    const customerPayment = total;
+
+    // Gross Profit = Revenue after tax - Cost
+    const revenueAfterTax = subtotalAfterDiscount;
+    const grossProfit = revenueAfterTax - costOfGoods;
+
+    // ✅ UPDATED: Net Profit = Gross Profit - Commission - Shipping Fee
+    const netProfit = grossProfit - platformCommission - shippingFee;
+
+    // ✅ FIXED: Profit margin against what CUSTOMER PAID (not revenue after tax)
+    const profitMargin = customerPayment > 0 ? (netProfit / customerPayment) * 100 : 0;
 
     console.log('💰 Profit Calculation:');
+    console.log('Customer Paid (total):', customerPayment.toFixed(2));
+    console.log('Tax Component:', totalTax.toFixed(2));
+    console.log('Revenue (after tax):', revenueAfterTax.toFixed(2));
     console.log('Cost of Goods:', costOfGoods.toFixed(2));
     console.log('Gross Profit:', grossProfit.toFixed(2));
+    console.log('Platform Commission:', platformCommission.toFixed(2));
+    console.log('Shipping Fee:', shippingFee.toFixed(2)); // ✅ NEW
     console.log('Net Profit:', netProfit.toFixed(2));
     console.log('Profit Margin:', profitMargin.toFixed(2) + '%');
+    console.log(' ^ Calculated as: (' + netProfit.toFixed(2) + ' / ' + customerPayment.toFixed(2) + ') × 100');
 
     // Generate invoice number
     const invoiceNo = await this.generateInvoiceNo(branchId);
@@ -132,6 +149,7 @@ export class SalesService {
           },
           channel,
           platformCommission: new Prisma.Decimal(platformCommission),
+          shippingFee: new Prisma.Decimal(shippingFee), // ✅ NEW
           // ✅ NEW: Add profit fields
           costOfGoods: new Prisma.Decimal(costOfGoods),
           grossProfit: new Prisma.Decimal(grossProfit),
@@ -180,7 +198,6 @@ export class SalesService {
     const { skip, take, branchId, customerId, search, paymentMethod, dateFilter, startDate, endDate } = params;
 
     const where: any = {};
-
     if (branchId) where.branchId = branchId;
     if (customerId) where.customerId = customerId;
 
@@ -191,8 +208,8 @@ export class SalesService {
 
     // Date filter logic
     if (dateFilter || (startDate && endDate)) {
-      let start: Date | undefined;  // ✅ Initialize as undefined
-      let end: Date | undefined;    // ✅ Initialize as undefined
+      let start: Date | undefined;
+      let end: Date | undefined;
       const now = new Date();
 
       switch (dateFilter) {
@@ -200,30 +217,26 @@ export class SalesService {
           start = new Date(now.setHours(0, 0, 0, 0));
           end = new Date(now.setHours(23, 59, 59, 999));
           break;
-
         case 'yesterday':
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           start = new Date(yesterday.setHours(0, 0, 0, 0));
           end = new Date(yesterday.setHours(23, 59, 59, 999));
           break;
-
         case 'thisWeek':
           const weekStart = new Date();
           const dayOfWeek = weekStart.getDay();
-          weekStart.setDate(weekStart.getDate() - dayOfWeek); // Go to Sunday
+          weekStart.setDate(weekStart.getDate() - dayOfWeek);
           start = new Date(weekStart.setHours(0, 0, 0, 0));
-          end = new Date(); // Current time
+          end = new Date();
           end.setHours(23, 59, 59, 999);
           break;
-
         case 'thisMonth':
           const monthStart = new Date();
           start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1, 0, 0, 0, 0);
-          end = new Date(); // Current time
+          end = new Date();
           end.setHours(23, 59, 59, 999);
           break;
-
         case 'custom':
           if (startDate && endDate) {
             start = new Date(startDate);
@@ -234,7 +247,6 @@ export class SalesService {
           break;
       }
 
-      // ✅ Only apply date filter if both start and end are defined
       if (start && end) {
         where.createdAt = {
           gte: start,
@@ -244,10 +256,7 @@ export class SalesService {
     }
 
     if (search) {
-      where.OR = [
-        { invoiceNo: { contains: search } },
-        { customer: { name: { contains: search } } },
-      ];
+      where.OR = [{ invoiceNo: { contains: search } }, { customer: { name: { contains: search } } }];
     }
 
     const [items, total] = await Promise.all([
@@ -282,6 +291,7 @@ export class SalesService {
       totalTax: Number(sale.totalTax),
       totalDiscount: Number(sale.totalDiscount),
       platformCommission: Number(sale.platformCommission),
+      shippingFee: Number(sale.shippingFee), // ✅ NEW
       costOfGoods: sale.costOfGoods ? Number(sale.costOfGoods) : undefined,
       grossProfit: sale.grossProfit ? Number(sale.grossProfit) : undefined,
       netProfit: sale.netProfit ? Number(sale.netProfit) : undefined,
@@ -293,8 +303,6 @@ export class SalesService {
       total,
     };
   }
-
-
 
   async findOne(id: number) {
     const invoice = await this.prisma.salesInvoice.findUnique({
@@ -335,6 +343,7 @@ export class SalesService {
       totalTax: Number(invoice.totalTax),
       totalDiscount: Number(invoice.totalDiscount),
       platformCommission: Number(invoice.platformCommission),
+      shippingFee: Number(invoice.shippingFee), // ✅ NEW
       costOfGoods: invoice.costOfGoods ? Number(invoice.costOfGoods) : undefined,
       grossProfit: invoice.grossProfit ? Number(invoice.grossProfit) : undefined,
       netProfit: invoice.netProfit ? Number(invoice.netProfit) : undefined,
@@ -382,6 +391,7 @@ export class SalesService {
         if (!acc[method]) {
           acc[method] = { count: 0, total: 0 };
         }
+
         acc[method].count++;
         acc[method].total += Number(invoice.total);
         return acc;

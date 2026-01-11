@@ -59,7 +59,7 @@ export class CreateSaleDto {
 
   @IsInt()
   @IsOptional()
-  stockLocationId?: number; // if not provided, use default location for branch
+  stockLocationId?: number;
 
   @IsOptional()
   notes?: string;
@@ -71,4 +71,9 @@ export class CreateSaleDto {
   @Min(0)
   @IsOptional()
   platformCommission?: number;
+
+  @IsNumber() // ✅ NEW
+  @Min(0) // ✅ NEW
+  @IsOptional() // ✅ NEW
+  shippingFee?: number; // ✅ NEW
 }

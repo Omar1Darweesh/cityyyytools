@@ -317,6 +317,7 @@ model SalesInvoice {
   totalDiscount      Decimal       @default(0) @map("total_discount") @db.Decimal(10, 2)
   discountAmount     Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2) // Extra clarity
   platformCommission Decimal       @default(0) @map("platform_commission") @db.Decimal(10, 2)
+  shippingFee        Decimal       @default(0) @map("shipping_fee") @db.Decimal(10, 2)  
   
   // Meta
   channel            String?       @db.VarChar(50) // NORMAL, NOON, AMAZON, etc.
@@ -507,6 +508,7 @@ model PlatformSettings {
   icon        String?  @db.VarChar(10) 
   taxRate     Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
   commission  Decimal  @default(0) @db.Decimal(5, 2)
+  shippingFee Decimal  @default(0) @map("shipping_fee") @db.Decimal(10, 2)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
