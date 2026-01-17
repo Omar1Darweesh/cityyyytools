@@ -156,7 +156,7 @@ export default function Roles() {
                     <div className="card" style={{ width: '600px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                         <h2 style={{ marginBottom: '20px' }}>{editingRole ? 'تعديل الدور' : 'دور جديد'}</h2>
 
-                        <div style={{ overflowY: 'auto', paddingRight: '10px' }}>
+                        <div style={{ overflowY: 'auto', paddingRight: '10px', flex: 1, minHeight: 0 }}>
                             <form id="roleForm" onSubmit={handleSubmit}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
                                     <div>
@@ -177,6 +177,7 @@ export default function Roles() {
                                         'المخزون والمنتجات': [],
                                         'المبيعات ونقاط البيع': [],
                                         'المشتريات والموردين': [],
+                                        'منصات البيع': [], // NEW: Add this group
                                         'الإدارة والإعدادات': [],
                                         'أخرى': []
                                     };
@@ -188,6 +189,8 @@ export default function Roles() {
                                             groups['المبيعات ونقاط البيع'].push(p);
                                         } else if (p.name.startsWith('purchasing')) {
                                             groups['المشتريات والموردين'].push(p);
+                                        } else if (p.name.startsWith('platform:')) { // NEW: Group platform permissions
+                                            groups['منصات البيع'].push(p);
                                         } else if (p.name.startsWith('users') || p.name.startsWith('settings')) {
                                             groups['الإدارة والإعدادات'].push(p);
                                         } else {

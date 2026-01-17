@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { CreateReturnDto } from './dto/returns.dto';
+import { CreateReturnDto, ReturnType } from './dto/returns.dto';
 import { ProductAuditService } from '../products/product-audit.service';
 
 @Injectable()
@@ -36,7 +36,7 @@ export class ReturnsService {
             include: { lines: true },
         });
 
-        const returnedQuantities = new Map<number, number>();
+        const returnedQuantities = new Map();
         existingReturns.forEach((ret: any) => {
             ret.lines.forEach((line: any) => {
                 const current = returnedQuantities.get(line.productId) || 0;
@@ -92,7 +92,7 @@ export class ReturnsService {
 
         const returnNo = `RET-${branchCode}-${dateStr}-${sequence.toString().padStart(4, '0')}`;
 
-        // Create return with lines
+        // ✅ Create return with lines (INCLUDING returnType)
         const salesReturn = await this.prisma.salesReturn.create({
             data: {
                 returnNo,
@@ -106,6 +106,7 @@ export class ReturnsService {
                         productId: item.productId,
                         qtyReturned: item.qtyReturned,
                         refundAmount: item.refundAmount,
+                        returnType: item.returnType || ReturnType.STOCK, // ✅ DEFAULT TO STOCK
                     })),
                 },
             },
@@ -132,66 +133,230 @@ export class ReturnsService {
             );
         }
 
-        // Create stock movements and audit logs
+        // ✅ Process each return item based on return type
         const auditPromises = items.map(async (item) => {
-            // Return items to inventory via stock movement
-            await this.prisma.stockMovement.create({
-                data: {
-                    productId: item.productId,
-                    stockLocationId: stockLocation.id,
-                    qtyChange: item.qtyReturned, // Positive for returns
-                    movementType: 'RETURN',
-                    refTable: 'salesreturns',
-                    refId: salesReturn.id,
-                    notes: `Return from invoice ${salesInvoice.invoiceNo}`,
-                    createdBy: userId,
-                },
-            });
+            const returnType = item.returnType || ReturnType.STOCK;
 
-            console.log(`📝 Creating audit log for return: Product ID ${item.productId}, Qty: ${item.qtyReturned}`);
-
-            // Create audit log
-            return this.prisma.productAudit.create({
-                data: {
-                    productId: item.productId,
-                    action: 'UPDATE',
+            if (returnType === ReturnType.STOCK) {
+                // ✅ STOCK: Return to original product
+                await this.handleStockReturn(
+                    item,
+                    stockLocation.id,
+                    salesReturn,
+                    salesInvoice,
                     userId,
-                    oldData: {
-                        returnInfo: {
-                            returnNo,
-                            salesInvoiceNo: salesInvoice.invoiceNo,
-                            qty: item.qtyReturned,
-                            reason: reason || 'Return from sale',
-                        },
-                    },
-                    newData: {
-                        stockMovement: {
-                            qtyChange: item.qtyReturned,
-                            movementType: 'RETURN',
-                        },
-                    },
-                },
-            });
+                );
+            } else if (returnType === ReturnType.DEFECTIVE) {
+                // ✅ DEFECTIVE: Create/update defective product
+                await this.handleDefectiveReturn(
+                    item,
+                    stockLocation.id,
+                    salesReturn,
+                    salesInvoice,
+                    userId,
+                );
+            }
         });
 
         await Promise.all(auditPromises);
 
-        console.log(`✅ Return ${returnNo} processed with ${items.length} audit logs created`);
-
+        console.log(`✅ Return ${returnNo} processed with ${items.length} items`);
         return salesReturn;
     }
 
+    // ✅ HELPER: Handle normal stock return
+    private async handleStockReturn(
+        item: any,
+        stockLocationId: number,
+        salesReturn: any,
+        salesInvoice: any,
+        userId: number,
+    ) {
+        // Return items to original product inventory
+        await this.prisma.stockMovement.create({
+            data: {
+                productId: item.productId,
+                stockLocationId,
+                qtyChange: item.qtyReturned, // Positive for returns
+                movementType: 'RETURN',
+                refTable: 'sales_returns',
+                refId: salesReturn.id,
+                notes: `Return to stock from invoice ${salesInvoice.invoiceNo}`,
+                createdBy: userId,
+            },
+        });
+
+        console.log(
+            `✅ STOCK RETURN: Product ID ${item.productId}, Qty: ${item.qtyReturned}`,
+        );
+
+        // Create audit log
+        return this.prisma.productAudit.create({
+            data: {
+                productId: item.productId,
+                action: 'UPDATE',
+                userId,
+                oldData: {
+                    returnInfo: {
+                        returnNo: salesReturn.returnNo,
+                        salesInvoiceNo: salesInvoice.invoiceNo,
+                        qty: item.qtyReturned,
+                        returnType: 'STOCK',
+                    },
+                },
+                newData: {
+                    stockMovement: {
+                        qtyChange: item.qtyReturned,
+                        movementType: 'RETURN',
+                    },
+                },
+            },
+        });
+    }
+
+    // ✅ HELPER: Handle defective product return
+    private async handleDefectiveReturn(
+        item: any,
+        stockLocationId: number,
+        salesReturn: any,
+        salesInvoice: any,
+        userId: number,
+    ) {
+        // Get original product
+        const originalProduct = await this.prisma.product.findUnique({
+            where: { id: item.productId },
+        });
+
+        if (!originalProduct) {
+            throw new NotFoundException(`Product ${item.productId} not found`);
+        }
+
+        // Find or create Defective category
+        let defectiveCategory = await this.prisma.category.findFirst({
+            where: {
+                OR: [
+                    { name: { equals: 'Defective', mode: 'insensitive' } },
+                    { nameAr: 'تلافيات' },
+                ],
+            },
+        });
+
+        if (!defectiveCategory) {
+            defectiveCategory = await this.prisma.category.create({
+                data: {
+                    name: 'Defective',
+                    nameAr: 'تلافيات',
+                    active: true,
+                },
+            });
+            console.log('✅ Created Defective category');
+        }
+
+        // Check if defective version of this product exists
+        const defectiveBarcode = `${originalProduct.barcode}_DEF`;
+        let defectiveProduct = await this.prisma.product.findFirst({
+            where: {
+                OR: [
+                    { barcode: defectiveBarcode },
+                    {
+                        AND: [
+                            { nameEn: { contains: originalProduct.nameEn } },
+                            { categoryId: defectiveCategory.id },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        if (!defectiveProduct) {
+            // Create new defective product
+            const lastProduct = await this.prisma.product.findFirst({
+                orderBy: { id: 'desc' },
+            });
+            const nextId = (lastProduct?.id || 0) + 1;
+            const defectiveCode = `DEF${String(nextId).padStart(6, '0')}`;
+
+            defectiveProduct = await this.prisma.product.create({
+                data: {
+                    code: defectiveCode,
+                    barcode: defectiveBarcode,
+                    nameEn: `${originalProduct.nameEn} (Defective)`,
+                    nameAr: `${originalProduct.nameAr || originalProduct.nameEn} (تالف)`,
+                    categoryId: defectiveCategory.id,
+                    itemTypeId: null, // Special category, no itemType
+                    brand: originalProduct.brand,
+                    unit: originalProduct.unit,
+                    cost: 0, // Defective items have no value
+                    priceRetail: 0,
+                    priceWholesale: 0,
+                    minQty: 0,
+                    maxQty: null,
+                    active: true,
+                },
+            });
+
+            console.log(
+                `✅ Created defective product: ${defectiveProduct.code} for ${originalProduct.code}`,
+            );
+        }
+
+        // Add stock movement to defective product
+        await this.prisma.stockMovement.create({
+            data: {
+                productId: defectiveProduct.id,
+                stockLocationId,
+                qtyChange: item.qtyReturned, // Add to defective inventory
+                movementType: 'RETURN',
+                refTable: 'sales_returns',
+                refId: salesReturn.id,
+                notes: `Defective return from invoice ${salesInvoice.invoiceNo} (Original: ${originalProduct.code})`,
+                createdBy: userId,
+            },
+        });
+
+        console.log(
+            `⚠️ DEFECTIVE RETURN: Product ID ${item.productId} → Defective Product ID ${defectiveProduct.id}, Qty: ${item.qtyReturned}`,
+        );
+
+        // Create audit log
+        return this.prisma.productAudit.create({
+            data: {
+                productId: defectiveProduct.id,
+                action: 'UPDATE',
+                userId,
+                oldData: {
+                    returnInfo: {
+                        returnNo: salesReturn.returnNo,
+                        salesInvoiceNo: salesInvoice.invoiceNo,
+                        originalProductId: originalProduct.id,
+                        originalProductCode: originalProduct.code,
+                        qty: item.qtyReturned,
+                        returnType: 'DEFECTIVE',
+                    },
+                },
+                newData: {
+                    stockMovement: {
+                        qtyChange: item.qtyReturned,
+                        movementType: 'RETURN',
+                        defectiveProductId: defectiveProduct.id,
+                    },
+                },
+            },
+        });
+    }
+
+    // ... keep rest of the methods (findAll, etc.)
     async findAll(params: {
         skip?: number;
         take?: number;
         branchId?: number;
-        salesInvoiceId?: number; // ✅ Add this
+        salesInvoiceId?: number;
     }) {
         const { skip, take, branchId, salesInvoiceId } = params;
 
         const where: any = {};
         if (branchId) where.branchId = branchId;
-        if (salesInvoiceId) where.salesInvoiceId = salesInvoiceId; // ✅ Add this
+        if (salesInvoiceId) where.salesInvoiceId = salesInvoiceId;
 
         const [data, total] = await Promise.all([
             this.prisma.salesReturn.findMany({
@@ -227,5 +392,4 @@ export class ReturnsService {
 
         return { data, total };
     }
-
 }

@@ -296,10 +296,21 @@ export default function Categories() {
                     [...categories].sort((a, b) => {
                         const aIsMixed = a.name?.toLowerCase() === 'mixed' || a.nameAr === 'متنوع';
                         const bIsMixed = b.name?.toLowerCase() === 'mixed' || b.nameAr === 'متنوع';
+                        const aIsDefective = a.name?.toLowerCase() === 'defective' || a.nameAr === 'تلافيات';
+                        const bIsDefective = b.name?.toLowerCase() === 'defective' || b.nameAr === 'تلافيات';
+
+                        // Defective always last
+                        if (aIsDefective) return 1;
+                        if (bIsDefective) return -1;
+
+                        // Mixed second to last (before Defective)
                         if (aIsMixed) return 1;
                         if (bIsMixed) return -1;
+
+                        // Normal categories stay in their order
                         return 0;
                     }).map((category) => (
+
                         <CategoryCard
                             key={category.id}
 
@@ -541,24 +552,28 @@ export default function Categories() {
 // CATEGORY CARD COMPONENT
 // ============================================
 function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddSubcategory, expandedSubcategories, onToggleSubcategory, onEditSubcategory, onDeleteSubcategory, onAddItemType, onEditItemType, onDeleteItemType, expandedItemTypes, onToggleItemType, itemProducts }: any) {
-    // ✅ Detect Mixed category
+    // ✅ Detect special categories
     const isMixed = category.name?.toLowerCase() === 'mixed' || category.nameAr === 'متنوع';
+    const isDefective = category.name?.toLowerCase() === 'defective' || category.nameAr === 'تلافيات';
+    const isSpecial = isMixed || isDefective;
 
-    // ✅ Different colors for Mixed
-    const bgGradient = isMixed
-        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'  // Orange
-        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; // Purple
+    // ✅ Different colors for special categories
+    const bgGradient = isDefective
+        ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' // Red for defective
+        : isMixed
+            ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' // Orange for mixed
+            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; // Purple for normal
 
     // ✅ State for Mixed products
     const [mixedProducts, setMixedProducts] = useState<any[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(false);
 
-    // ✅ Load products for Mixed category
+    // ✅ Load products for special categories (Mixed & Defective)
     useEffect(() => {
-        if (isMixed && isExpanded) {
+        if (isSpecial && isExpanded) {
             loadMixedProducts();
         }
-    }, [isMixed, isExpanded, category.id]);
+    }, [isSpecial, isExpanded, category.id]);
 
     const loadMixedProducts = async () => {
         try {
@@ -600,7 +615,9 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                     {isExpanded ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         {/* ✅ Different icon for Mixed */}
-                        <span style={{ fontSize: '2rem' }}>{isMixed ? '🔧' : '📁'}</span>
+                        <span style={{ fontSize: '2rem' }}>
+                            {isDefective ? '⚠️' : isMixed ? '🔧' : '📁'}
+                        </span>
                         <div>
                             <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>
                                 {category.nameAr || category.name}
@@ -612,7 +629,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {!isMixed && (
+                    {!isSpecial && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onEdit(); }}
                             style={{
@@ -627,7 +644,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                             <Edit size={18} />
                         </button>
                     )}
-                    {!isMixed && (
+                    {!isSpecial && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(); }}
                             style={{
@@ -644,7 +661,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                     )}
 
                     {/* ✅ Hide "Add Subcategory" button for Mixed */}
-                    {!isMixed && (
+                    {!isSpecial && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onAddSubcategory(); }}
                             style={{
@@ -669,7 +686,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
             {/* Content - Different for Mixed vs Normal */}
             {isExpanded && (
                 <div style={{ marginTop: '1rem', marginRight: '2rem' }}>
-                    {isMixed ? (
+                    {isSpecial ? (
                         /* ✅ MIXED CATEGORY - Show Products */
                         loadingProducts ? (
                             <div style={{
@@ -683,19 +700,21 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                             </div>
                         ) : mixedProducts.length === 0 ? (
                             <div style={{
-                                padding: '2.5rem',
+                                padding: '2rem',
                                 textAlign: 'center',
-                                background: 'rgba(255,255,255,0.1)',
-                                borderRadius: '0.75rem',
+                                color: 'rgba(255,255,255,0.9)',
                             }}>
-                                <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>📦</div>
-                                <div style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.5rem' }}>
-                                    لا توجد منتجات متنوعة
+                                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                                    {isDefective ? 'لا توجد منتجات تالفة' : 'لا توجد منتجات متنوعة'}
                                 </div>
-                                <div style={{ fontSize: '0.875rem', opacity: 0.8 }}>
-                                    أضف منتجات من صفحة "المنتجات" واختر "متنوع" كتصنيف
+                                <div style={{ fontSize: '0.95rem', opacity: 0.8 }}>
+                                    {isDefective
+                                        ? 'أضف منتجات من صفحة "المنتجات" واختر "تلافيات" كتصنيف'
+                                        : 'أضف منتجات من صفحة "المنتجات" واختر "متنوع" كتصنيف'
+                                    }
                                 </div>
                             </div>
+
                         ) : (
                             <div>
                                 {/* Product Count Badge */}
@@ -711,7 +730,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
                                     fontWeight: '600',
                                 }}>
                                     <span>📦</span>
-                                    <span>{mixedProducts.length} منتج متنوع</span>
+                                    <span>{mixedProducts.length}{isDefective ? 'منتج تالف' : 'منتج متنوع'}</span>
                                 </div>
 
                                 {/* Products Grid */}

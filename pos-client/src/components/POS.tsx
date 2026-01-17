@@ -195,44 +195,105 @@ function POS() {
     const loadPlatformSettings = async () => {
         try {
             setLoading(true);
-            const data = await apiClient.get('/settings/platforms');
+            const data = await apiClient.get('settings/platforms');
+
             if (!data || !Array.isArray(data) || data.length === 0) {
-                setMessage('⚠️ يرجى إضافة منصات من صفحة الإعدادات');
+                setMessage('⚠️ لا توجد منصات نشطة');
                 setLoading(false);
                 return;
             }
 
+            // ✅ NEW: Get user permissions from localStorage
+            const userData = JSON.parse(localStorage.getItem('user')!);
+            const userPermissions = userData?.permissions || [];
+
             const loadedChannels: Record<string, PlatformConfig> = {};
+
             data.forEach((platform: any) => {
                 if (platform.active) {
-                    loadedChannels[platform.id.toString()] = {
-                        id: platform.id.toString(),
-                        code: platform.platform,
-                        name: platform.name,
-                        icon: platform.icon || '🛒',
-                        tax: Number(platform.taxRate) / 100,
-                        platform: Number(platform.commission) / 100,
-                        shippingFee: Number(platform.shippingFee) || 0,
-                        btnText: platform.name,
-                        active: platform.active,
-                    };
+                    // ✅ NEW: Check if user has permission for this platform
+                    const platformPermission = `platform:${platform.platform}`;
+                    const hasPermission = userPermissions.includes(platformPermission);
+
+                    // Check if user is admin by role OR has admin permissions
+                    const userRoles = userData?.roles || [];
+                    const isAdmin = userRoles.includes('ADMIN') ||
+                        userRoles.includes('SYSTEM_ADMIN') ||
+                        userPermissions.includes('MANAGE_ADMIN') ||
+                        userPermissions.includes('settings:manage');
+
+
+                    if (hasPermission || isAdmin) {
+                        loadedChannels[platform.id.toString()] = {
+                            id: platform.id.toString(),
+                            code: platform.platform,
+                            name: platform.name,
+                            icon: platform.icon || '📦',
+                            tax: Number(platform.taxRate) / 100,
+                            platform: Number(platform.commission) / 100,
+                            shippingFee: Number(platform.shippingFee) || 0,
+                            btnText: platform.name,
+                            active: platform.active,
+                        };
+                    }
                 }
             });
 
             setChannels(loadedChannels);
+
             const firstChannel = Object.keys(loadedChannels)[0];
-            if (firstChannel) setActiveTab(firstChannel);
+            if (firstChannel) {
+                setActiveTab(firstChannel);
+            } else {
+                setMessage('❌ لا تملك صلاحيات لأي منصة');
+            }
+
             setLoading(false);
         } catch (error) {
-            console.error('Failed to load platforms', error);
-            setMessage('⚠️ يرجى إضافة منصات من صفحة الإعدادات');
+            console.error('Failed to load platforms:', error);
+            setMessage('❌ فشل تحميل المنصات');
             setLoading(false);
         }
     };
+    // Add this RIGHT AFTER loadPlatformSettings function (around line 240)
+    const refreshUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem('accessToken');
+            if (!token) return;
 
+            // Fetch fresh user profile from backend
+            const response = await apiClient.get('auth/me'); // ✅ Changed to 'auth/me'
+
+            if (response) {
+                // Update localStorage with fresh permissions
+                const currentUser = JSON.parse(localStorage.getItem('user')!);
+                const updatedUser = {
+                    ...currentUser,
+                    permissions: response.permissions,
+                    roles: response.roles
+                };
+
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+
+                console.log('✅ Permissions refreshed:', response.permissions);
+
+                // Reload platforms with new permissions
+                await loadPlatformSettings();
+            }
+        } catch (error) {
+            console.error('Failed to refresh permissions:', error);
+            // Don't logout on error - just use cached permissions
+            await loadPlatformSettings();
+        }
+    };
+
+
+    // Add this useEffect to refresh permissions on component mount
     useEffect(() => {
-        loadPlatformSettings();
-    }, []);
+        refreshUserPermissions();
+    }, []); // Run once when component mounts
+
+
 
     useEffect(() => {
         barcodeInputRef.current?.focus();
@@ -540,7 +601,7 @@ function POS() {
     };
 
     const refreshPlatformSettings = async () => {
-        await loadPlatformSettings();
+        await refreshUserPermissions();
         setMessage('✅ تم تحديث المنصات');
     };
 
@@ -587,6 +648,9 @@ function POS() {
                     <h1><ShoppingCart size={32} /> نقطة البيع</h1>
                     <div className="user-info">
                         <div className="user-tag"><User size={14} /> {user.fullName}</div>
+                        <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
+                            📦 {Object.keys(CHANNELS).length} منصات
+                        </div>
                         <div className="branch-tag"><Building size={14} /> {user.branch?.name}</div>
                         <button onClick={handleLogout} className="logout-btn">تسجيل خروج</button>
                         <button
@@ -1506,8 +1570,10 @@ function POS() {
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            if (p.stock !== 0) addToCart(p);
-                                            else {
+                                            if (p.stock !== 0) {
+                                                addToCart(p);
+                                                setShowProductBrowser(false); // ✅ ADD THIS LINE
+                                            } else {
                                                 playBeep('error');
                                                 setMessage('❌ المنتج غير متوفر في المخزون');
                                             }
@@ -1570,7 +1636,7 @@ function POS() {
                         <button
                             onClick={() => setShowProductBrowser(false)}
                             style={{
-                                background: 'rgba(255,255,255,0.2)',
+                                background: '#ef4444',
                                 border: 'none',
                                 cursor: 'pointer',
                                 color: 'white',
@@ -1581,10 +1647,17 @@ function POS() {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                transition: 'all 0.2s'
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)'  // ✅ Add shadow
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#dc2626';
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#ef4444';
+                                e.currentTarget.style.transform = 'scale(1)';
+                            }}
                         >
                             ✕
                         </button>

@@ -23,15 +23,16 @@ export class PlatformSettingsService {
         icon?: string;
         taxRate: number;
         commission: number;
-        shippingFee: number; // ✅ ADD THIS
+        shippingFee: number;
         active: boolean;
     }) {
-        return this.prisma.platformSettings.upsert({
+        // 1. Create or update the platform
+        const platformResult = await this.prisma.platformSettings.upsert({
             where: { platform: data.platform },
             update: {
                 taxRate: data.taxRate,
                 commission: data.commission,
-                shippingFee: data.shippingFee, // ✅ ADD THIS
+                shippingFee: data.shippingFee,
                 active: data.active,
                 ...(data.name && { name: data.name }),
                 ...(data.icon && { icon: data.icon }),
@@ -42,13 +43,38 @@ export class PlatformSettingsService {
                 icon: data.icon || '🏪',
                 taxRate: data.taxRate,
                 commission: data.commission,
-                shippingFee: data.shippingFee, // ✅ ADD THIS
+                shippingFee: data.shippingFee,
                 active: data.active,
             },
         });
+
+        // 2. ✅ AUTO-CREATE PERMISSION for this platform
+        const permissionName = `platform:${data.platform.toUpperCase()}`;
+        const permissionDescription = `Access ${platformResult.name} marketplace`;
+
+        await this.prisma.permission.upsert({
+            where: { name: permissionName },
+            create: {
+                name: permissionName,
+                description: permissionDescription,
+            },
+            update: {
+                // Update description if platform name changed
+                description: permissionDescription,
+            },
+        });
+
+        return platformResult;
     }
 
     async deletePlatform(platform: string) {
+        // 1. Delete the matching permission first
+        const permissionName = `platform:${platform.toUpperCase()}`;
+        await this.prisma.permission.deleteMany({
+            where: { name: permissionName },
+        });
+
+        // 2. Delete the platform
         return this.prisma.platformSettings.delete({
             where: { platform },
         });
@@ -61,7 +87,6 @@ export class PlatformSettingsService {
         return settings?.taxRate ? Number(settings.taxRate) : 15;
     }
 
-    // ✅ NEW METHOD
     async getShippingFee(platform: string): Promise<number> {
         const settings = await this.prisma.platformSettings.findUnique({
             where: { platform },

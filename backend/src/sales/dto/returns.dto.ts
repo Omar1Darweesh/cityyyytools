@@ -5,8 +5,15 @@ import {
     IsArray,
     ValidateNested,
     IsNumber,
+    IsEnum,  // ✅ ADD THIS
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+// ✅ ADD THIS ENUM
+export enum ReturnType {
+    STOCK = 'STOCK',
+    DEFECTIVE = 'DEFECTIVE',
+}
 
 export class ReturnItemDto {
     @IsInt()
@@ -17,6 +24,11 @@ export class ReturnItemDto {
 
     @IsNumber()
     refundAmount: number;
+
+    // ✅ ADD THIS FIELD
+    @IsEnum(ReturnType)
+    @IsOptional()
+    returnType?: ReturnType;
 }
 
 export class CreateReturnDto {

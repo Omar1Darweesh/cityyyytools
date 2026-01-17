@@ -27,6 +27,14 @@ const permissions = [
     // Admin
     { name: 'VIEW_ADMIN', description: 'View users, reports, settings' },
     { name: 'MANAGE_ADMIN', description: 'Manage users, roles, platform settings' },
+
+    // Platform Access Permissions
+    { name: 'platform:normal', description: 'Access normal/offline sales channel' },
+    { name: 'platform:noon', description: 'Access Noon marketplace' },
+    { name: 'platform:amazon', description: 'Access Amazon marketplace' },
+    { name: 'platform:jumia', description: 'Access Jumia marketplace' },
+    { name: 'platform:social', description: 'Access social media sales' },
+    { name: 'platform:pogba', description: 'Access Pogba platform' },
 ];
 
 async function main() {
@@ -69,7 +77,7 @@ async function main() {
                 name: 'Admin',
                 description: 'System Administrator',
                 permissions: {
-                    create: allPermissions.map(p => ({
+                    create: allPermissions.map((p: any) => ({
                         permission: { connect: { id: p.id } }
                     }))
                 }

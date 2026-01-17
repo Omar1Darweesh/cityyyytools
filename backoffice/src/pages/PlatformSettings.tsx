@@ -37,13 +37,66 @@ function PlatformSettings() {
             const response = await apiClient.get('settings/platforms');
             console.log('Response:', response);
             console.log('Response.data:', response.data);
-            setPlatforms(response.data);
+
+            // ✅ AUTO-INITIALIZE: If no platforms exist, create defaults based on permissions
+            if (!response.data || response.data.length === 0) {
+                console.log('No platforms found, initializing defaults...');
+                await initializeDefaultPlatforms();
+                // Fetch again after initialization
+                const newResponse = await apiClient.get('settings/platforms');
+                setPlatforms(newResponse.data);
+            } else {
+                setPlatforms(response.data);
+            }
         } catch (error: any) {
             console.error('Error:', error);
             console.error('Error response:', error.response);
         } finally {
             console.log('fetchPlatforms complete');
             setLoading(false);
+        }
+    };
+
+    const initializeDefaultPlatforms = async () => {
+        // Get user permissions from localStorage
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        const permissions = userData.permissions || [];
+
+        // Extract platform names from permissions
+        const platformPermissions = permissions
+            .filter((p: string) => p.startsWith('platform:'))
+            .map((p: string) => p.replace('platform:', ''));
+
+        console.log('Found platform permissions:', platformPermissions);
+
+        // Create default platforms for each permission
+        const defaultPlatforms = [
+            { name: 'POGBA', taxRate: 15, commission: 5, shippingFee: 0, active: true },
+            { name: 'NORMAL', taxRate: 15, commission: 0, shippingFee: 0, active: true },
+            { name: 'NOON', taxRate: 15, commission: 10, shippingFee: 15, active: true },
+            { name: 'JUMIA', taxRate: 15, commission: 12, shippingFee: 20, active: true },
+            { name: 'AMAZON', taxRate: 15, commission: 15, shippingFee: 25, active: true },
+            { name: 'SOCIAL', taxRate: 15, commission: 0, shippingFee: 0, active: true },
+            { name: 'ZID', taxRate: 15, commission: 8, shippingFee: 12, active: true },
+            { name: 'AAMAZO', taxRate: 15, commission: 10, shippingFee: 20, active: true },
+            { name: 'YOU', taxRate: 15, commission: 5, shippingFee: 10, active: true },
+        ];
+
+        // Filter to only platforms the user has permission for
+        const allowedPlatforms = defaultPlatforms.filter(p =>
+            platformPermissions.includes(p.name)
+        );
+
+        console.log('Creating platforms:', allowedPlatforms);
+
+        // Create each platform
+        for (const platform of allowedPlatforms) {
+            try {
+                await apiClient.post('settings/platforms', platform);
+                console.log(`✅ Created platform: ${platform.name}`);
+            } catch (error) {
+                console.error(`❌ Failed to create platform ${platform.name}:`, error);
+            }
         }
     };
 

@@ -39,8 +39,9 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
     const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<number | null>(null);
     const [selectedItemTypeId, setSelectedItemTypeId] = useState<number | null>(null);
 
-    // ✅ Mixed category mode
-    const [isMixedCategory, setIsMixedCategory] = useState(false);
+    // ✅ Special category mode (Mixed or Defective)
+    const [isSpecialCategory, setIsSpecialCategory] = useState(false);
+    const [specialCategoryType, setSpecialCategoryType] = useState<'mixed' | 'defective' | null>(null);
 
     // Form data
     const [formData, setFormData] = useState({
@@ -104,15 +105,22 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                 if (itemType) {
                     setSelectedItemTypeId(itemType.id);
                 }
-                setIsMixedCategory(false);
+                setIsSpecialCategory(false); // ✅ Fixed
+                setSpecialCategoryType(null);  // ✅ Also set this
+
             }
-            // ✅ Check if it's a Mixed category product (has category but no itemType)
+            // ✅ Check if it's a special category product (Mixed or Defective)
             else if (product.category) {
                 setSelectedCategoryId(product.category.id);
                 const isMixed = product.category.name?.toLowerCase() === 'mixed' ||
                     product.category.nameAr === 'متنوع';
-                setIsMixedCategory(isMixed);
+                const isDefective = product.category.name?.toLowerCase() === 'defective' ||
+                    product.category.nameAr === 'تلافيات';
+
+                setIsSpecialCategory(isMixed || isDefective);
+                setSpecialCategoryType(isMixed ? 'mixed' : isDefective ? 'defective' : null);
             }
+
         }
     }, [product]);
 
@@ -143,7 +151,6 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
         }
     };
 
-    // ✅ FIXED: Handle category change with Mixed detection
     const handleCategoryChange = (categoryId: number | null) => {
         setSelectedCategoryId(categoryId);
         setSelectedSubcategoryId(null);
@@ -154,16 +161,21 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
         if (categoryId) {
             const category = categories.find(c => c.id === categoryId);
             const isMixed = category?.name?.toLowerCase() === 'mixed' || category?.nameAr === 'متنوع';
-            setIsMixedCategory(isMixed);
+            const isDefective = category?.name?.toLowerCase() === 'defective' || category?.nameAr === 'تلافيات';
 
-            // Only load subcategories if NOT mixed
-            if (!isMixed) {
+            setIsSpecialCategory(isMixed || isDefective);
+            setSpecialCategoryType(isMixed ? 'mixed' : isDefective ? 'defective' : null);
+
+            // Only load subcategories if NOT special category
+            if (!isMixed && !isDefective) {
                 loadSubcategories(categoryId);
             }
         } else {
-            setIsMixedCategory(false);
+            setIsSpecialCategory(false);
+            setSpecialCategoryType(null);
         }
     };
+
 
     const handleSubcategoryChange = (subcategoryId: number | null) => {
         setSelectedSubcategoryId(subcategoryId);
@@ -183,28 +195,30 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
             return;
         }
 
-        // ✅ UPDATED VALIDATION: Mixed category only needs categoryId
+        // ✅ UPDATED VALIDATION: Special categories only need categoryId
         if (!selectedCategoryId) {
             alert('الرجاء اختيار التصنيف');
             return;
         }
 
-        if (!isMixedCategory && !selectedItemTypeId) {
+        if (!isSpecialCategory && !selectedItemTypeId) {
             alert('الرجاء اختيار التصنيف الكامل (التصنيف الرئيسي → الفرعي → نوع الصنف)');
             return;
         }
+
 
         setLoading(true);
 
         try {
             const { initialStock, ...baseData } = formData;
 
-            // ✅ UPDATED PAYLOAD: null itemTypeId for Mixed
+            // ✅ UPDATED PAYLOAD: null itemTypeId for special categories
             const payload = {
                 ...baseData,
-                itemTypeId: isMixedCategory ? null : selectedItemTypeId,
+                itemTypeId: isSpecialCategory ? null : selectedItemTypeId,
                 categoryId: selectedCategoryId,
             };
+
 
             console.log('✅ Submitting product:', payload);
 
@@ -300,7 +314,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             🏷️ التصنيف
                         </h3>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: isMixedCategory ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isSpecialCategory ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
                             {/* Category */}
                             <div>
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
@@ -330,7 +344,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             </div>
 
                             {/* ✅ Subcategory - Hidden for Mixed */}
-                            {!isMixedCategory && (
+                            {!isSpecialCategory && (
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
                                         2️⃣ التصنيف الفرعي *
@@ -364,7 +378,7 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             )}
 
                             {/* ✅ Item Type - Hidden for Mixed */}
-                            {!isMixedCategory && (
+                            {!isSpecialCategory && (
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem' }}>
                                         3️⃣ نوع الصنف *
@@ -398,32 +412,36 @@ export default function ProductForm({ product, onClose, onSave }: ProductFormPro
                             )}
                         </div>
 
-                        {/* ✅ Mixed Category Indicator */}
-                        {isMixedCategory && (
+                        {/* ✅ Special Category Indicator */}
+                        {isSpecialCategory && (
                             <div style={{
-                                marginTop: '1rem',
                                 padding: '1rem',
-                                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                                border: '2px solid #f59e0b',
+                                background: specialCategoryType === 'defective'
+                                    ? 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)'
+                                    : 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
                                 borderRadius: '0.5rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
+                                marginTop: '1rem',
                             }}>
-                                <span style={{ fontSize: '28px' }}>🔧</span>
-                                <div>
-                                    <div style={{ fontWeight: '700', color: '#92400e', fontSize: '1rem' }}>
-                                        منتج متنوع (Mixed Product)
-                                    </div>
-                                    <div style={{ fontSize: '0.875rem', color: '#78350f', marginTop: '4px' }}>
-                                        ✓ لا يحتاج إلى فئة فرعية أو نوع صنف - يمكنك الانتقال مباشرة لملء بيانات المنتج
-                                    </div>
+                                <div style={{
+                                    fontWeight: 'bold',
+                                    fontSize: '1.1rem',
+                                    color: specialCategoryType === 'defective' ? '#7f1d1d' : '#92400e',
+                                    marginBottom: '0.5rem'
+                                }}>
+                                    {specialCategoryType === 'defective' ? '⚠️ منتج تالف (Defective Product)' : '🔧 منتج متنوع (Mixed Product)'}
+                                </div>
+                                <div style={{
+                                    fontSize: '0.9rem',
+                                    color: specialCategoryType === 'defective' ? '#991b1b' : '#78350f'
+                                }}>
+                                    ✓ لا يحتاج إلى فئة فرعية أو نوع صنف - يمكنك الانتقال مباشرة لملء بيانات المنتج
                                 </div>
                             </div>
                         )}
 
+
                         {/* Breadcrumb Preview - Only for hierarchical */}
-                        {!isMixedCategory && selectedCategoryId && (
+                        {!isSpecialCategory && selectedCategoryId && (
                             <div
                                 style={{
                                     marginTop: '1rem',
