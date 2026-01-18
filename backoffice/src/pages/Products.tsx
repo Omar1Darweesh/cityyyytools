@@ -62,11 +62,12 @@ export default function Products() {
     const [selectedProductForAudit, setSelectedProductForAudit] = useState<any>(null);
     const [showTransactions, setShowTransactions] = useState(false);
     const [selectedProductForTransactions, setSelectedProductForTransactions] = useState<any>(null);
+    const [showInactive, setShowInactive] = useState(false);
 
     useEffect(() => {
         fetchProducts();
         fetchCategories();
-    }, [searchTerm, selectedCategory, selectedSubcategory, selectedItemType, page]);
+    }, [searchTerm, selectedCategory, selectedSubcategory, selectedItemType, page, showInactive]);
 
     const fetchProducts = async () => {
         setLoading(true);
@@ -80,6 +81,8 @@ export default function Products() {
             if (selectedCategory) params.categoryId = selectedCategory;
             if (selectedSubcategory) params.subcategoryId = selectedSubcategory;
             if (selectedItemType) params.itemTypeId = selectedItemType;
+
+            if (!showInactive) params.active = true;
 
             const response = await apiClient.get('/products', { params });
             setProducts(response.data.data);
@@ -109,6 +112,16 @@ export default function Products() {
         } catch (error) {
             console.error('Failed to delete product:', error);
             alert('فشل حذف المنتج');
+        }
+    };
+
+    const handleReactivate = async (id: number) => {
+        try {
+            await apiClient.patch(`/products/${id}`, { active: true });
+            fetchProducts();
+        } catch (error) {
+            console.error('Failed to reactivate product:', error);
+            alert('فشل تفعيل المنتج');
         }
     };
 
@@ -167,7 +180,7 @@ export default function Products() {
                 </button>
             </div>
 
-            {/* Filters */}
+            {/* Enhanced Filters */}
             <div style={{
                 background: 'white',
                 padding: '1.5rem',
@@ -175,6 +188,7 @@ export default function Products() {
                 marginBottom: '1.5rem',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             }}>
+                {/* Main Filters Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                     {/* Search */}
                     <div style={{ position: 'relative' }}>
@@ -202,8 +216,27 @@ export default function Products() {
                                 border: '1px solid #e5e7eb',
                                 borderRadius: '8px',
                                 fontSize: '0.875rem',
+                                transition: 'all 0.2s',
                             }}
+                            onFocus={(e) => e.target.style.borderColor = '#667eea'}
+                            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
+                        {searchTerm && (
+                            <span style={{
+                                position: 'absolute',
+                                left: '12px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: '#667eea',
+                                color: 'white',
+                                borderRadius: '10px',
+                                padding: '2px 8px',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                            }}>
+                                ✓
+                            </span>
+                        )}
                     </div>
 
                     {/* Category Filter */}
@@ -215,7 +248,7 @@ export default function Products() {
                                 right: '12px',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
-                                color: '#9ca3af',
+                                color: selectedCategory ? '#667eea' : '#9ca3af',
                             }}
                         />
                         <select
@@ -229,10 +262,12 @@ export default function Products() {
                             style={{
                                 width: '100%',
                                 padding: '0.75rem 2.5rem 0.75rem 1rem',
-                                border: '1px solid #e5e7eb',
+                                border: selectedCategory ? '2px solid #667eea' : '1px solid #e5e7eb',
                                 borderRadius: '8px',
                                 fontSize: '0.875rem',
                                 background: 'white',
+                                transition: 'all 0.2s',
+                                fontWeight: selectedCategory ? '600' : 'normal',
                             }}
                         >
                             <option value="">كل الفئات</option>
@@ -253,7 +288,7 @@ export default function Products() {
                                 right: '12px',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
-                                color: '#9ca3af',
+                                color: selectedSubcategory ? '#667eea' : '#9ca3af',
                             }}
                         />
                         <select
@@ -267,11 +302,13 @@ export default function Products() {
                             style={{
                                 width: '100%',
                                 padding: '0.75rem 2.5rem 0.75rem 1rem',
-                                border: '1px solid #e5e7eb',
+                                border: selectedSubcategory ? '2px solid #667eea' : '1px solid #e5e7eb',
                                 borderRadius: '8px',
                                 fontSize: '0.875rem',
                                 background: 'white',
                                 opacity: selectedCategory ? 1 : 0.5,
+                                transition: 'all 0.2s',
+                                fontWeight: selectedSubcategory ? '600' : 'normal',
                             }}
                         >
                             <option value="">كل الفئات الفرعية</option>
@@ -292,7 +329,7 @@ export default function Products() {
                                 right: '12px',
                                 top: '50%',
                                 transform: 'translateY(-50%)',
-                                color: '#9ca3af',
+                                color: selectedItemType ? '#667eea' : '#9ca3af',
                             }}
                         />
                         <select
@@ -305,11 +342,13 @@ export default function Products() {
                             style={{
                                 width: '100%',
                                 padding: '0.75rem 2.5rem 0.75rem 1rem',
-                                border: '1px solid #e5e7eb',
+                                border: selectedItemType ? '2px solid #667eea' : '1px solid #e5e7eb',
                                 borderRadius: '8px',
                                 fontSize: '0.875rem',
                                 background: 'white',
                                 opacity: selectedSubcategory ? 1 : 0.5,
+                                transition: 'all 0.2s',
+                                fontWeight: selectedItemType ? '600' : 'normal',
                             }}
                         >
                             <option value="">كل الأصناف</option>
@@ -322,28 +361,119 @@ export default function Products() {
                     </div>
                 </div>
 
-                {hasActiveFilters && (
-                    <button
-                        onClick={() => {
-                            setSearchTerm('');
-                            setSelectedCategory(null);
-                            setSelectedSubcategory(null);
-                            setSelectedItemType(null);
-                            setPage(1);
+                {/* Filter Actions Row */}
+                <div style={{
+                    display: 'flex',
+                    gap: '1rem',
+                    marginTop: '1rem',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                }}>
+                    {/* Show Inactive Products Toggle */}
+                    <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.75rem 1rem',
+                        background: showInactive ? '#f0f4ff' : '#f9fafb',
+                        borderRadius: '8px',
+                        border: showInactive ? '2px solid #667eea' : '1px solid #e5e7eb',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        userSelect: 'none',
+                    }}
+                        onMouseEnter={(e) => {
+                            if (!showInactive) {
+                                e.currentTarget.style.background = '#f3f4f6';
+                            }
                         }}
-                        style={{
-                            marginTop: '1rem',
-                            padding: '0.5rem 1rem',
-                            background: '#f3f4f6',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem',
+                        onMouseLeave={(e) => {
+                            if (!showInactive) {
+                                e.currentTarget.style.background = '#f9fafb';
+                            }
                         }}
                     >
-                        مسح الفلاتر
-                    </button>
-                )}
+                        <input
+                            type="checkbox"
+                            checked={showInactive}
+                            onChange={(e) => setShowInactive(e.target.checked)}
+                            style={{
+                                width: '18px',
+                                height: '18px',
+                                cursor: 'pointer',
+                                accentColor: '#667eea',
+                            }}
+                        />
+                        <span style={{
+                            fontSize: '0.875rem',
+                            fontWeight: showInactive ? '600' : 'normal',
+                            color: showInactive ? '#667eea' : '#374151',
+                        }}>
+                            عرض المنتجات غير النشطة
+                        </span>
+                        {showInactive && (
+                            <span style={{
+                                background: '#667eea',
+                                color: 'white',
+                                borderRadius: '10px',
+                                padding: '2px 8px',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                            }}>
+                                ON
+                            </span>
+                        )}
+                    </label>
+
+                    {/* Active Filters Badge */}
+                    {hasActiveFilters && (
+                        <>
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.5rem 1rem',
+                                background: '#fef3c7',
+                                borderRadius: '8px',
+                                fontSize: '0.875rem',
+                                color: '#92400e',
+                                fontWeight: '600',
+                            }}>
+                                <Filter size={14} />
+                                <span>فلاتر نشطة</span>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setSelectedCategory(null);
+                                    setSelectedSubcategory(null);
+                                    setSelectedItemType(null);
+                                    setPage(1);
+                                }}
+                                style={{
+                                    padding: '0.75rem 1rem',
+                                    background: '#fee2e2',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem',
+                                    color: '#991b1b',
+                                    fontWeight: '600',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = '#fecaca';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = '#fee2e2';
+                                }}
+                            >
+                                ✕ مسح الفلاتر
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Products Table */}
@@ -544,6 +674,26 @@ export default function Products() {
                                                     >
                                                         <Trash size={18} />
                                                     </button>
+                                                    {!product.active && (
+                                                        <button
+                                                            onClick={() => handleReactivate(product.id)}
+                                                            style={{
+                                                                padding: '0.5rem',
+                                                                background: '#10b981',
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius: '0.375rem',
+                                                                cursor: 'pointer',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.25rem',
+                                                            }}
+                                                            title="تفعيل"
+                                                        >
+                                                            ✓ تفعيل
+                                                        </button>
+                                                    )}
+
                                                 </div>
                                             </td>
                                         </tr>

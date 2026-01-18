@@ -248,41 +248,54 @@ model StockMovement {
 }
 
 model SalesInvoice {
-  id                 Int           @id @default(autoincrement())
-  invoiceNo          String        @unique @map("invoice_no") @db.VarChar(50)
-  branchId           Int           @map("branch_id")
-  customerId         Int?          @map("customer_id")
-  subtotal           Decimal       @default(0) @db.Decimal(10, 2)
-  total              Decimal       @default(0) @db.Decimal(10, 2)
-  totalTax           Decimal       @default(0) @map("total_tax") @db.Decimal(10, 2)
-  totalDiscount      Decimal       @default(0) @map("total_discount") @db.Decimal(10, 2)
-  discountAmount     Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  platformCommission Decimal       @default(0) @map("platform_commission") @db.Decimal(10, 2)
-  channel            String?       @db.VarChar(50)
-  paymentStatus      PaymentStatus @default(PAID) @map("payment_status")
-  paymentMethod      PaymentMethod @map("payment_method")
+  id                 Int            @id @default(autoincrement())
+  invoiceNo          String         @unique @map("invoiceno") @db.VarChar(50)
+  branchId           Int            @map("branchid")
+  customerId         Int?           @map("customerid")
+  subtotal           Decimal        @default(0) @db.Decimal(10, 2)
+  total              Decimal        @default(0) @db.Decimal(10, 2)
+  totalTax           Decimal        @default(0) @map("totaltax") @db.Decimal(10, 2)
+  totalDiscount      Decimal        @default(0) @map("totaldiscount") @db.Decimal(10, 2)
+  discountAmount     Decimal        @default(0) @map("discountamount") @db.Decimal(10, 2)
+  platformCommission Decimal        @default(0) @map("platformcommission") @db.Decimal(10, 2)
+  channel            String?        @db.VarChar(50)
+  paymentStatus      PaymentStatus  @default(PAID) @map("paymentstatus")
+  paymentMethod      PaymentMethod  @map("paymentmethod")
   notes              String?
-  createdBy          Int           @map("created_by")
-  createdAt          DateTime      @default(now()) @map("created_at")
-  updatedAt          DateTime      @updatedAt @map("updated_at")
-  costOfGoods        Decimal?      @map("cost_of_goods") @db.Decimal(10, 2)
-  grossProfit        Decimal?      @map("gross_profit") @db.Decimal(10, 2)
-  netProfit          Decimal?      @map("net_profit") @db.Decimal(10, 2)
-  profitMargin       Decimal?      @map("profit_margin") @db.Decimal(5, 2)
-  shippingFee        Decimal       @default(0) @map("shipping_fee") @db.Decimal(10, 2)
-  delivered          Boolean       @default(false)
-  deliveryDate       DateTime?     @map("delivery_date")
-  paidAmount         Decimal       @default(0) @map("paid_amount") @db.Decimal(10, 2)
-  remainingAmount    Decimal       @default(0) @map("remaining_amount") @db.Decimal(10, 2)
+  createdBy          Int            @map("createdby")
+  createdAt          DateTime       @default(now()) @map("createdat")
+  updatedAt          DateTime       @updatedAt @map("updatedat")
+  
+  // Profit tracking
+  costOfGoods        Decimal?       @map("costofgoods") @db.Decimal(10, 2)
+  grossProfit        Decimal?       @map("grossprofit") @db.Decimal(10, 2)
+  netProfit          Decimal?       @map("netprofit") @db.Decimal(10, 2)
+  profitMargin       Decimal?       @map("profitmargin") @db.Decimal(5, 2)
+  
+  // ✅ NEW: Return tracking
+  totalRefunded      Decimal        @default(0) @map("totalrefunded") @db.Decimal(10, 2)
+  netRevenue         Decimal?       @map("netrevenue") @db.Decimal(10, 2)
+  
+  // Shipping & delivery
+  shippingFee        Decimal        @default(0) @map("shippingfee") @db.Decimal(10, 2)
+  delivered          Boolean        @default(false)
+  deliveryDate       DateTime?      @map("deliverydate")
+  
+  // Payment tracking
+  paidAmount         Decimal        @default(0) @map("paidamount") @db.Decimal(10, 2)
+  remainingAmount    Decimal        @default(0) @map("remainingamount") @db.Decimal(10, 2)
+  
   payments           Payment[]
-  branch             Branch        @relation(fields: [branchId], references: [id])
-  user               User          @relation(fields: [createdBy], references: [id])
-  customer           Customer?     @relation(fields: [customerId], references: [id])
+  branch             Branch         @relation(fields: [branchId], references: [id])
+  user               User           @relation(fields: [createdBy], references: [id])
+  customer           Customer?      @relation(fields: [customerId], references: [id])
   lines              SalesLine[]
+  returns            SalesReturn[]  @relation("InvoiceReturns")
 
   @@index([createdAt, branchId])
-  @@map("sales_invoices")
+  @@map("salesinvoices")
 }
+
 
 model SalesLine {
   id             Int          @id @default(autoincrement())
@@ -300,21 +313,24 @@ model SalesLine {
 }
 
 model SalesReturn {
-  id             Int               @id @default(autoincrement())
-  returnNo       String            @unique @map("return_no") @db.VarChar(50)
-  salesInvoiceId Int               @map("sales_invoice_id")
-  branchId       Int               @map("branch_id")
-  totalRefund    Decimal           @default(0) @map("total_refund") @db.Decimal(10, 2)
-  reason         String?
-  createdBy      Int               @map("created_by")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  lines          SalesReturnLine[]
-  branch         Branch            @relation(fields: [branchId], references: [id])
-  user           User              @relation(fields: [createdBy], references: [id])
+  id              Int               @id @default(autoincrement())
+  returnNo        String            @unique @map("returnno") @db.VarChar(50)
+  salesInvoiceId  Int               @map("salesinvoiceid")
+  branchId        Int               @map("branchid")
+  totalRefund     Decimal           @default(0) @map("totalrefund") @db.Decimal(10, 2)
+  reason          String?
+  createdBy       Int               @map("createdby")
+  createdAt       DateTime          @default(now()) @map("createdat")
+  
+  lines           SalesReturnLine[]
+  branch          Branch            @relation(fields: [branchId], references: [id])
+  user            User              @relation(fields: [createdBy], references: [id])
+  salesInvoice    SalesInvoice      @relation("InvoiceReturns", fields: [salesInvoiceId], references: [id]) // ✅ ADD THIS
 
   @@index([createdAt, branchId])
-  @@map("sales_returns")
+  @@map("salesreturns")
 }
+
 
 model SalesReturnLine {
   id           Int         @id @default(autoincrement())

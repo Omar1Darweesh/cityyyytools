@@ -5,14 +5,24 @@ import {
     IsArray,
     ValidateNested,
     IsNumber,
-    IsEnum,  // ✅ ADD THIS
+    IsEnum,
+    IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-// ✅ ADD THIS ENUM
 export enum ReturnType {
     STOCK = 'STOCK',
     DEFECTIVE = 'DEFECTIVE',
+}
+
+export class DefectedProductPricingDto {
+    @IsNumber()
+    @IsPositive()
+    priceRetail: number;
+
+    @IsNumber()
+    @IsPositive()
+    priceWholesale: number;
 }
 
 export class ReturnItemDto {
@@ -25,10 +35,14 @@ export class ReturnItemDto {
     @IsNumber()
     refundAmount: number;
 
-    // ✅ ADD THIS FIELD
     @IsEnum(ReturnType)
     @IsOptional()
     returnType?: ReturnType;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => DefectedProductPricingDto)
+    defectedProductPricing?: DefectedProductPricingDto;
 }
 
 export class CreateReturnDto {

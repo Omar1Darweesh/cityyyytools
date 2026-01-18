@@ -6,17 +6,25 @@ import {
     Query,
     UseGuards,
     Request,
+    Param
 } from '@nestjs/common';
 import { ReturnsService } from './returns.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateReturnDto } from './dto/returns.dto';
 
-@Controller('pos/returns')  // ✅ Changed from 'sales/returns' to 'pos/returns'
-@UseGuards(JwtAuthGuard)
+@Controller('pos/returns')
 export class ReturnsController {
     constructor(private readonly returnsService: ReturnsService) { }
 
+    // ✅ Public endpoint - no guard
+    @Get('check-defective/:productId')
+    async checkDefectiveProduct(@Param('productId') productId: string) {
+        return this.returnsService.checkDefectiveProduct(+productId);
+    }
+
+    // ✅ Protected endpoints below
     @Post()
+    @UseGuards(JwtAuthGuard)
     createReturn(@Body() createReturnDto: CreateReturnDto, @Request() req: any) {
         return this.returnsService.createReturn({
             ...createReturnDto,
@@ -25,19 +33,18 @@ export class ReturnsController {
     }
 
     @Get()
+    @UseGuards(JwtAuthGuard)
     findAll(
         @Query('skip') skip?: string,
         @Query('take') take?: string,
         @Query('branchId') branchId?: string,
-        @Query('salesInvoiceId') salesInvoiceId?: string, // ✅ Add this
-
+        @Query('salesInvoiceId') salesInvoiceId?: string,
     ) {
         return this.returnsService.findAll({
             skip: skip ? parseInt(skip) : undefined,
             take: take ? parseInt(take) : undefined,
             branchId: branchId ? parseInt(branchId) : undefined,
-            salesInvoiceId: salesInvoiceId ? parseInt(salesInvoiceId) : undefined, // ✅ Add this
-
+            salesInvoiceId: salesInvoiceId ? parseInt(salesInvoiceId) : undefined,
         });
     }
 }

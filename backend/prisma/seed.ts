@@ -229,89 +229,29 @@ async function main() {
     });
     console.log('✅ Created cashier user (username: cashier, password: cashier123)');
 
-    // Create some product categories
-    const category1 = await prisma.category.upsert({
+    // ✅ CREATE SYSTEM CATEGORIES (AUTOMATIC)
+    // These categories are created automatically and should not be deleted
+    const defectiveCategory = await prisma.category.upsert({
         where: { id: 1 },
         update: {},
         create: {
-            name: 'Electronics',
-            nameAr: 'إلكترونيات',
+            name: 'DEFECTIVE',
+            nameAr: 'تالف',
             active: true,
         },
     });
 
-    const category2 = await prisma.category.upsert({
+    const mixedCategory = await prisma.category.upsert({
         where: { id: 2 },
         update: {},
         create: {
-            name: 'Food & Beverages',
-            nameAr: 'طعام ومشروبات',
+            name: 'MIXED',
+            nameAr: 'منوعات',
             active: true,
         },
     });
-    console.log('✅ Created product categories');
-
-    // Create sample products
-    const product1 = await prisma.product.upsert({
-        where: { barcode: '1234567890123' },
-        update: {},
-        create: {
-            code: 'PROD001',
-            barcode: '1234567890123',
-            nameEn: 'Wireless Mouse',
-            nameAr: 'ماوس لاسلكي',
-            categoryId: category1.id,
-            brand: 'Logitech',
-            unit: 'PCS',
-            cost: 15.00,
-            priceRetail: 25.00,
-            priceWholesale: 20.00,
-            minQty: 10,
-            maxQty: 100,
-            active: true,
-        },
-    });
-
-    const product2 = await prisma.product.upsert({
-        where: { barcode: '1234567890124' },
-        update: {},
-        create: {
-            code: 'PROD002',
-            barcode: '1234567890124',
-            nameEn: 'USB Cable',
-            nameAr: 'كابل يو اس بي',
-            categoryId: category1.id,
-            brand: 'Generic',
-            unit: 'PCS',
-            cost: 2.00,
-            priceRetail: 5.00,
-            priceWholesale: 4.00,
-            minQty: 50,
-            maxQty: 500,
-            active: true,
-        },
-    });
-
-    const product3 = await prisma.product.upsert({
-        where: { barcode: '1234567890125' },
-        update: {},
-        create: {
-            code: 'PROD003',
-            barcode: '1234567890125',
-            nameEn: 'Bottled Water',
-            nameAr: 'مياه معبأة',
-            categoryId: category2.id,
-            brand: 'Aquafina',
-            unit: 'BTL',
-            cost: 0.50,
-            priceRetail: 1.00,
-            priceWholesale: 0.80,
-            minQty: 100,
-            maxQty: 1000,
-            active: true,
-        },
-    });
-    console.log('✅ Created sample products');
+    console.log('✅ Created system categories: DEFECTIVE (تالف), MIXED (منوعات)');
+    console.log('   ⚠️  These are system categories for special products');
 
     // Create a supplier
     const supplier = await prisma.supplier.upsert({
@@ -333,8 +273,12 @@ async function main() {
     console.log('🎉 Seeding completed successfully!');
     console.log('');
     console.log('📝 Test Credentials:');
-    console.log('   Admin    - username: admin    password: admin123');
-    console.log('   Cashier  - username: cashier  password: cashier123');
+    console.log('   Admin - username: admin password: admin123');
+    console.log('   Cashier - username: cashier password: cashier123');
+    console.log('');
+    console.log('📦 System Categories Created:');
+    console.log('   1. DEFECTIVE (تالف) - For damaged/defective products');
+    console.log('   2. MIXED (منوعات) - For miscellaneous items');
     console.log('');
 }
 

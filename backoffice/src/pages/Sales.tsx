@@ -14,9 +14,9 @@ interface Sale {
     platformCommission: number;
     shippingFee: number;
     paymentMethod: string;
-    paymentStatus: string; // ✅ NEW
-    paidAmount: number; // ✅ NEW
-    remainingAmount: number; // ✅ NEW
+    paymentStatus: string;
+    paidAmount: number;
+    remainingAmount: number;
     channel?: string;
     customer?: { name: string };
     user?: { fullName: string };
@@ -25,7 +25,11 @@ interface Sale {
     grossProfit?: number;
     netProfit?: number;
     profitMargin?: number;
+    // ADD THESE TWO FIELDS:
+    totalRefunded?: number;
+    netRevenue?: number;
 }
+
 
 export default function Sales() {
     const navigate = useNavigate();
@@ -42,7 +46,19 @@ export default function Sales() {
 
     useEffect(() => {
         fetchSales();
+
+        // ✅ Auto-refresh when returning from detail page
+        const handleFocus = () => {
+            fetchSales();
+        };
+
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+        };
     }, [filters]);
+
 
     const fetchSales = async () => {
         setLoading(true);
@@ -280,7 +296,9 @@ export default function Sales() {
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>الضريبة</th>
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>عمولة المنصة</th>
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>الإجمالي</th>
-                                {/* ✅ NEW: Payment Status Columns */}
+                                <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>المرتجع</th>
+                                <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>الصافي</th>
+
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>حالة الدفع</th>
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>المتبقي</th>
                                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#374151', borderBottom: '2px solid #e5e7eb' }}>التكلفة</th>
@@ -297,13 +315,13 @@ export default function Sales() {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={17} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                                    <td colSpan={19} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
                                         جاري التحميل...
                                     </td>
                                 </tr>
                             ) : sales.length === 0 ? (
                                 <tr>
-                                    <td colSpan={17} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                                    <td colSpan={19} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
                                         لا توجد مبيعات
                                     </td>
                                 </tr>
@@ -341,6 +359,30 @@ export default function Sales() {
                                         <td style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', fontWeight: '700', fontSize: '15px' }}>
                                             {Number(sale.total).toFixed(2)} ر.س
                                         </td>
+
+                                        {/* After Total cell */}
+                                        <td style={{
+                                            padding: '12px 16px',
+                                            borderBottom: '1px solid #e5e7eb',
+                                            color: sale.totalRefunded && sale.totalRefunded > 0 ? '#dc2626' : '#6b7280',
+                                            fontWeight: sale.totalRefunded && sale.totalRefunded > 0 ? 'bold' : 'normal'
+                                        }}>
+                                            {sale.totalRefunded && sale.totalRefunded > 0
+                                                ? `-${Number(sale.totalRefunded).toFixed(2)} ج.م`
+                                                : '-'}
+                                        </td>
+
+                                        <td style={{
+                                            padding: '12px 16px',
+                                            borderBottom: '1px solid #e5e7eb',
+                                            fontWeight: '600',
+                                            fontSize: '15px'
+                                        }}>
+                                            {sale.netRevenue !== undefined
+                                                ? `${Number(sale.netRevenue).toFixed(2)} ج.م`
+                                                : `${Number(sale.total).toFixed(2)} ج.م`}
+                                        </td>
+
 
                                         {/* ✅ NEW: Payment Status Cell */}
                                         <td style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>

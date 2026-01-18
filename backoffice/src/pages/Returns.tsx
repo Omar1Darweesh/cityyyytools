@@ -39,6 +39,12 @@ interface ReturnItem {
     returnType: 'STOCK' | 'DEFECTIVE';
 }
 
+interface DefectedProductPricing {
+    lineId: string;
+    priceRetail: string;
+    priceWholesale: string;
+}
+
 export default function Returns() {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -49,6 +55,8 @@ export default function Returns() {
     const [submitting, setSubmitting] = useState(false);
     const [success, setSuccess] = useState('');
     const [error, setError] = useState('');
+    const [defectedPricing, setDefectedPricing] = useState<DefectedProductPricing[]>([]);
+    const [defectiveStatus, setDefectiveStatus] = useState<Record<string, any>>({});
 
     useEffect(() => {
         fetchInvoices();
@@ -146,19 +154,58 @@ export default function Returns() {
         );
     };
 
+    const checkDefectiveStatus = async (productId: number, lineId: string) => {
+        try {
+            const response = await apiClient.get(`/pos/returns/check-defective/${productId}`);
+            setDefectiveStatus(prev => ({
+                ...prev,
+                [lineId]: response.data
+            }));
+        } catch (error) {
+            console.error('Failed to check defective status:', error);
+        }
+    };
     // ✅ FIXED: Properly update only the specific product's return type
     const updateReturnType = (lineId: string, type: 'STOCK' | 'DEFECTIVE') => {
         setReturnItems(prevItems =>
             prevItems.map(item => {
-                // Only update the item with matching lineId
                 if (item.lineId === lineId) {
+                    // Check defective status when switching to DEFECTIVE
+                    if (type === 'DEFECTIVE') {
+                        checkDefectiveStatus(item.productId, lineId);
+                    }
                     return { ...item, returnType: type };
                 }
-                // Return other items unchanged
                 return item;
             })
         );
     };
+
+    // Update defected product pricing
+    const updateDefectedPricing = (lineId: string, field: 'priceRetail' | 'priceWholesale', value: string) => {
+        setDefectedPricing(prev => {
+            const existing = prev.find(p => p.lineId === lineId);
+            if (existing) {
+                return prev.map(p =>
+                    p.lineId === lineId
+                        ? { ...p, [field]: value }
+                        : p
+                );
+            } else {
+                return [...prev, { lineId, priceRetail: '', priceWholesale: '', [field]: value }];
+            }
+        });
+    };
+
+    // Get defected pricing for a line
+    const getDefectedPricing = (lineId: string): DefectedProductPricing => {
+        return defectedPricing.find(p => p.lineId === lineId) || {
+            lineId,
+            priceRetail: '',
+            priceWholesale: ''
+        };
+    };
+
 
     const handleSubmit = async () => {
         try {
@@ -167,15 +214,29 @@ export default function Returns() {
 
             const returnLines = returnItems
                 .filter(item => item.returnQty > 0)
-                .map(i => ({
-                    productId: i.productId,
-                    qtyReturned: i.returnQty,
-                    refundAmount: i.refundAmount,
-                    returnType: i.returnType,
-                }));
+                .map(i => {
+                    const line: any = {
+                        productId: i.productId,
+                        qtyReturned: i.returnQty,
+                        refundAmount: i.refundAmount,
+                        returnType: i.returnType,
+                    };
+
+                    if (i.returnType === 'DEFECTIVE') {
+                        const pricing = getDefectedPricing(i.lineId);
+                        if (pricing.priceRetail && pricing.priceWholesale) {
+                            line.defectedProductPricing = {
+                                priceRetail: parseFloat(pricing.priceRetail),
+                                priceWholesale: parseFloat(pricing.priceWholesale)
+                            };
+                        }
+                    }
+
+                    return line;
+                });
 
             if (returnLines.length === 0) {
-                alert('الرجاء تحديد المنتجات المراد إرجاعها');
+                alert('يرجى تحديد المنتجات المراد إرجاعها');
                 setSubmitting(false);
                 return;
             }
@@ -186,13 +247,30 @@ export default function Returns() {
                 reason
             });
 
-            setSuccess('تم الإرجاع بنجاح');
+            setSuccess('✅ تم إنشاء طلب الإرجاع بنجاح');
             setShowModal(false);
+            setDefectedPricing([]);
             fetchInvoices();
+
             setTimeout(() => setSuccess(''), 3000);
         } catch (err: any) {
             console.error('Failed to submit return:', err);
-            setError(err.response?.data?.message || 'فشل إرجاع المنتجات');
+
+            // Better error message
+            let errorMessage = 'فشل إنشاء طلب الإرجاع';
+
+            if (err.response?.data?.message) {
+                const backendMessage = err.response.data.message;
+
+                // Check if it's the pricing error
+                if (backendMessage.includes('pricing is required')) {
+                    errorMessage = '⚠️ يرجى إدخال أسعار البيع للمنتجات المعيبة (المرجعة لأول مرة)';
+                } else {
+                    errorMessage = backendMessage;
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setSubmitting(false);
         }
@@ -285,10 +363,7 @@ export default function Returns() {
                                     </thead>
                                     <tbody>
                                         {returnItems.map(item => (
-                                            <tr
-                                                key={item.productId}
-                                                style={{ background: item.availableToReturn === 0 ? '#f9fafb' : 'white' }}
-                                            >
+                                            <tr key={item.lineId} style={{ background: item.availableToReturn === 0 ? '#f9fafb' : 'white' }}>
                                                 <td style={{ ...styles.td, opacity: item.availableToReturn === 0 ? 0.5 : 1 }}>
                                                     {item.productName}
                                                 </td>
@@ -349,27 +424,242 @@ export default function Returns() {
                                                 </td>
                                                 <td style={styles.td}>
                                                     {item.returnQty > 0 ? (
-                                                        <select
-                                                            value={item.returnType}
-                                                            onChange={(e) => {
-                                                                console.log(`Changing line ${item.lineId} (product ${item.productId}) to ${e.target.value}`);
-                                                                updateReturnType(item.lineId, e.target.value as 'STOCK' | 'DEFECTIVE');
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem',
-                                                                borderRadius: '0.375rem',
-                                                                border: '1px solid #d1d5db',
-                                                                background: item.returnType === 'DEFECTIVE' ? '#fee2e2' : '#f0fdf4',
-                                                                color: item.returnType === 'DEFECTIVE' ? '#7f1d1d' : '#14532d',
-                                                                fontWeight: '600',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.875rem',
-                                                                width: '100%'
-                                                            }}
-                                                        >
-                                                            <option value="STOCK">✅ للمخزون</option>
-                                                            <option value="DEFECTIVE">⚠️ تالف</option>
-                                                        </select>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            <select
+                                                                value={item.returnType}
+                                                                onChange={(e) => {
+                                                                    console.log(`Changing line ${item.lineId} product ${item.productId} to ${e.target.value}`);
+                                                                    updateReturnType(item.lineId, e.target.value as 'STOCK' | 'DEFECTIVE');
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.5rem',
+                                                                    borderRadius: '0.375rem',
+                                                                    border: '1px solid #d1d5db',
+                                                                    background: item.returnType === 'DEFECTIVE' ? '#fee2e2' : '#f0fdf4',
+                                                                    color: item.returnType === 'DEFECTIVE' ? '#7f1d1d' : '#14532d',
+                                                                    fontWeight: 600,
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.875rem',
+                                                                    width: '100%'
+                                                                }}
+                                                            >
+                                                                <option value="STOCK">إعادة للمخزن</option>
+                                                                <option value="DEFECTIVE">معيب</option>
+                                                            </select>
+
+                                                            {/* Price inputs for defected items */}
+                                                            {item.returnType === 'DEFECTIVE' && (
+                                                                <div style={{
+                                                                    padding: '10px',
+                                                                    background: defectiveStatus[item.lineId]?.exists ? '#f0f9ff' : '#fef3c7',
+                                                                    border: `2px solid ${defectiveStatus[item.lineId]?.exists ? '#3b82f6' : '#fbbf24'}`,
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '12px'
+                                                                }}>
+                                                                    {/* Status Badge */}
+                                                                    <div style={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '8px',
+                                                                        marginBottom: '10px',
+                                                                        paddingBottom: '8px',
+                                                                        borderBottom: '1px solid #e5e7eb'
+                                                                    }}>
+                                                                        {defectiveStatus[item.lineId] ? (
+                                                                            defectiveStatus[item.lineId].exists ? (
+                                                                                <>
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        padding: '4px 10px',
+                                                                                        background: '#dbeafe',
+                                                                                        color: '#1e40af',
+                                                                                        borderRadius: '6px',
+                                                                                        fontWeight: '600',
+                                                                                        border: '1px solid #3b82f6'
+                                                                                    }}>
+                                                                                        ✓ منتج معيب موجود مسبقاً
+                                                                                    </span>
+                                                                                    <span style={{
+                                                                                        fontSize: '10px',
+                                                                                        color: '#64748b'
+                                                                                    }}>
+                                                                                        سيتم إضافة الكمية للمنتج الموجود
+                                                                                    </span>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        padding: '4px 10px',
+                                                                                        background: '#fef3c7',
+                                                                                        color: '#92400e',
+                                                                                        borderRadius: '6px',
+                                                                                        fontWeight: '600',
+                                                                                        border: '1px solid #fbbf24'
+                                                                                    }}>
+                                                                                        ★ منتج معيب جديد
+                                                                                    </span>
+                                                                                    <span style={{
+                                                                                        fontSize: '10px',
+                                                                                        color: '#dc2626',
+                                                                                        fontWeight: '600'
+                                                                                    }}>
+                                                                                        يجب إدخال أسعار البيع
+                                                                                    </span>
+                                                                                </>
+                                                                            )
+                                                                        ) : (
+                                                                            <span style={{
+                                                                                fontSize: '11px',
+                                                                                padding: '4px 10px',
+                                                                                background: '#f1f5f9',
+                                                                                color: '#64748b',
+                                                                                borderRadius: '6px',
+                                                                                fontWeight: '600'
+                                                                            }}>
+                                                                                ⏳ جاري التحقق...
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Original Product Price Reference */}
+                                                                    {defectiveStatus[item.lineId]?.originalProduct && (
+                                                                        <div style={{
+                                                                            background: '#f8fafc',
+                                                                            padding: '8px',
+                                                                            borderRadius: '6px',
+                                                                            marginBottom: '10px',
+                                                                            fontSize: '11px'
+                                                                        }}>
+                                                                            <div style={{ fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                                                                📋 السعر الأصلي للمنتج:
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', gap: '16px', color: '#64748b' }}>
+                                                                                <span>تجزئة: <strong>{Number(defectiveStatus[item.lineId].originalProduct.priceRetail).toFixed(2)} ج.م</strong></span>
+                                                                                <span>جملة: <strong>{Number(defectiveStatus[item.lineId].originalProduct.priceWholesale).toFixed(2)} ج.م</strong></span>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Existing Defective Price Info */}
+                                                                    {defectiveStatus[item.lineId]?.exists && defectiveStatus[item.lineId]?.defectiveProduct && (
+                                                                        <div style={{
+                                                                            background: '#ecfdf5',
+                                                                            padding: '8px',
+                                                                            borderRadius: '6px',
+                                                                            marginBottom: '10px',
+                                                                            fontSize: '11px',
+                                                                            border: '1px solid #10b981'
+                                                                        }}>
+                                                                            <div style={{ fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>
+                                                                                💰 السعر الحالي للمنتج المعيب:
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', gap: '16px', color: '#047857' }}>
+                                                                                <span>تجزئة: <strong>{Number(defectiveStatus[item.lineId].defectiveProduct.priceRetail).toFixed(2)} ج.م</strong></span>
+                                                                                <span>جملة: <strong>{Number(defectiveStatus[item.lineId].defectiveProduct.priceWholesale).toFixed(2)} ج.م</strong></span>
+                                                                            </div>
+                                                                            <div style={{ fontSize: '10px', color: '#059669', marginTop: '4px' }}>
+                                                                                💡 اترك الحقول فارغة لاستخدام هذه الأسعار، أو أدخل أسعار جديدة للتحديث
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Price Input Fields */}
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                                        <div>
+                                                                            <label style={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '6px',
+                                                                                fontSize: '11px',
+                                                                                color: '#475569',
+                                                                                marginBottom: '4px',
+                                                                                fontWeight: '600'
+                                                                            }}>
+                                                                                <span>سعر التجزئة الجديد:</span>
+                                                                                {defectiveStatus[item.lineId]?.exists ? (
+                                                                                    <span style={{ fontSize: '10px', color: '#10b981', fontWeight: '400' }}>
+                                                                                        (اختياري)
+                                                                                    </span>
+                                                                                ) : defectiveStatus[item.lineId] ? (
+                                                                                    <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '600' }}>
+                                                                                        (مطلوب)
+                                                                                    </span>
+                                                                                ) : null}
+                                                                            </label>
+                                                                            <input
+                                                                                type="number"
+                                                                                step="0.01"
+                                                                                min="0"
+                                                                                placeholder={
+                                                                                    defectiveStatus[item.lineId]?.exists && defectiveStatus[item.lineId]?.defectiveProduct
+                                                                                        ? `الحالي: ${Number(defectiveStatus[item.lineId].defectiveProduct.priceRetail).toFixed(2)}`
+                                                                                        : 'أدخل سعر التجزئة'
+                                                                                }
+                                                                                value={getDefectedPricing(item.lineId).priceRetail}
+                                                                                onChange={(e) => updateDefectedPricing(item.lineId, 'priceRetail', e.target.value)}
+                                                                                style={{
+                                                                                    width: '100%',
+                                                                                    padding: '6px 10px',
+                                                                                    border: `1px solid ${defectiveStatus[item.lineId]?.exists ? '#10b981' : '#fbbf24'}`,
+                                                                                    borderRadius: '6px',
+                                                                                    fontSize: '13px',
+                                                                                    fontWeight: '600',
+                                                                                    outline: 'none'
+                                                                                }}
+                                                                            />
+                                                                        </div>
+
+                                                                        <div>
+                                                                            <label style={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '6px',
+                                                                                fontSize: '11px',
+                                                                                color: '#475569',
+                                                                                marginBottom: '4px',
+                                                                                fontWeight: '600'
+                                                                            }}>
+                                                                                <span>سعر الجملة الجديد:</span>
+                                                                                {defectiveStatus[item.lineId]?.exists ? (
+                                                                                    <span style={{ fontSize: '10px', color: '#10b981', fontWeight: '400' }}>
+                                                                                        (اختياري)
+                                                                                    </span>
+                                                                                ) : defectiveStatus[item.lineId] ? (
+                                                                                    <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '600' }}>
+                                                                                        (مطلوب)
+                                                                                    </span>
+                                                                                ) : null}
+                                                                            </label>
+                                                                            <input
+                                                                                type="number"
+                                                                                step="0.01"
+                                                                                min="0"
+                                                                                placeholder={
+                                                                                    defectiveStatus[item.lineId]?.exists && defectiveStatus[item.lineId]?.defectiveProduct
+                                                                                        ? `الحالي: ${Number(defectiveStatus[item.lineId].defectiveProduct.priceWholesale).toFixed(2)}`
+                                                                                        : 'أدخل سعر الجملة'
+                                                                                }
+                                                                                value={getDefectedPricing(item.lineId).priceWholesale}
+                                                                                onChange={(e) => updateDefectedPricing(item.lineId, 'priceWholesale', e.target.value)}
+                                                                                style={{
+                                                                                    width: '100%',
+                                                                                    padding: '6px 10px',
+                                                                                    border: `1px solid ${defectiveStatus[item.lineId]?.exists ? '#10b981' : '#fbbf24'}`,
+                                                                                    borderRadius: '6px',
+                                                                                    fontSize: '13px',
+                                                                                    fontWeight: '600',
+                                                                                    outline: 'none'
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+
+
+                                                        </div>
                                                     ) : (
                                                         <span style={{ color: '#9ca3af' }}>-</span>
                                                     )}
@@ -381,6 +671,7 @@ export default function Returns() {
                                             </tr>
                                         ))}
                                     </tbody>
+
                                 </table>
                             </div>
 

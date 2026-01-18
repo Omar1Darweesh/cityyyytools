@@ -29,9 +29,17 @@ interface Category {
 
 interface Product {
     id: number;
+    code: string;
+    barcode: string;
     name: string;
     nameAr: string;
+    nameEn: string;
+    unit: string;
+    stock: number;
+    priceRetail: number;
+    minQty: number;
 }
+
 
 export default function Categories() {
     const [categories, setCategories] = useState<Category[]>([]);
@@ -103,14 +111,25 @@ export default function Categories() {
 
     const fetchItemProducts = async (itemTypeId: number) => {
         try {
-            const { data } = await apiClient.get(`/products?itemTypeId=${itemTypeId}`);
+            const { data } = await apiClient.get(`/products?itemTypeId=${itemTypeId}&active=true`);
             const products = data.data || data;
-            setItemProducts(prev => ({ ...prev, [itemTypeId]: Array.isArray(products) ? products : [] }));
+
+            // ✅ Filter out defective products on frontend
+            const defectiveCat = categories.find(c =>
+                c.name?.toLowerCase() === 'defective' || c.nameAr === 'تلافيات'
+            );
+
+            const filteredProducts = Array.isArray(products)
+                ? products.filter(p => p.categoryId !== defectiveCat?.id)
+                : [];
+
+            setItemProducts(prev => ({ ...prev, [itemTypeId]: filteredProducts }));
         } catch (error) {
             console.error('Failed to fetch products:', error);
             setItemProducts(prev => ({ ...prev, [itemTypeId]: [] }));
         }
     };
+
 
     const toggleItemType = (id: number) => {
         const newExpanded = new Set(expandedItemTypes);
@@ -579,7 +598,7 @@ function CategoryCard({ category, isExpanded, onToggle, onEdit, onDelete, onAddS
         try {
             setLoadingProducts(true);
             const branchId = localStorage.getItem('branchId') || '1';
-            const { data } = await apiClient.get(`/products?categoryId=${category.id}&branchId=${branchId}`);
+            const { data } = await apiClient.get(`/products?categoryId=${category.id}&branchId=${branchId}&active=true`);
             console.log('✅ Mixed products loaded:', data);
             const products = data.data || data; // ✅ Extract nested array
             setMixedProducts(Array.isArray(products) ? products : []);
@@ -981,7 +1000,7 @@ function SubcategoryCard({ subcategory, isExpanded, onToggle, onEdit, onDelete, 
 // ITEM TYPE CARD COMPONENT
 // ============================================
 function ItemTypeCard({ itemType, onEdit, onDelete, isExpanded, onToggle, products }: any) {
-    const productCount = itemType._count?.products ?? itemType.count?.products ?? 0;
+    const productCount = products ? products.length : (itemType._count?.products ?? itemType.count?.products ?? 0);
 
     return (
         <div style={{ marginBottom: '0.5rem' }}>
@@ -1000,10 +1019,14 @@ function ItemTypeCard({ itemType, onEdit, onDelete, isExpanded, onToggle, produc
                 onClick={onToggle}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    {isExpanded ? <ChevronDown size={18} color="#6366f1" /> : <ChevronRight size={18} color="#6366f1" />}
+                    {isExpanded ? (
+                        <ChevronDown size={18} color="#6366f1" />
+                    ) : (
+                        <ChevronRight size={18} color="#6366f1" />
+                    )}
                     <Package size={18} style={{ color: '#6366f1' }} />
                     <div>
-                        <div style={{ fontWeight: '500', fontSize: '0.95rem', color: '#1f2937' }}>
+                        <div style={{ fontWeight: 500, fontSize: '0.95rem', color: '#1f2937' }}>
                             {itemType.nameAr || itemType.name}
                         </div>
                         <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
@@ -1051,7 +1074,7 @@ function ItemTypeCard({ itemType, onEdit, onDelete, isExpanded, onToggle, produc
                 </div>
             </div>
 
-            {/* Products List (View Only) */}
+            {/* Enhanced Products List */}
             {isExpanded && (
                 <div style={{
                     marginTop: '0.5rem',
@@ -1067,33 +1090,132 @@ function ItemTypeCard({ itemType, onEdit, onDelete, isExpanded, onToggle, produc
                         </div>
                     ) : products.length === 0 ? (
                         <div style={{ textAlign: 'center', color: '#6b7280', padding: '1rem' }}>
-                            لا توجد منتجات
+                            لا توجد منتجات نشطة
                         </div>
                     ) : (
-                        products.map((product: Product) => (
-                            <div
-                                key={product.id}
-                                style={{
-                                    padding: '0.5rem 0.75rem',
-                                    background: 'white',
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: '0.375rem',
-                                    marginBottom: '0.5rem',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                }}
-                            >
-                                <div>
-                                    <div style={{ fontWeight: '500', fontSize: '0.9rem', color: '#1f2937' }}>
-                                        {product.nameAr || product.name}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                            gap: '0.75rem',
+                        }}>
+                            {products.map((product: any) => {
+                                const stock = product.stock || 0;
+                                const isLowStock = stock > 0 && stock <= (product.minQty || 5);
+                                const isOutOfStock = stock === 0;
+
+                                return (
+                                    <div
+                                        key={product.id}
+                                        style={{
+                                            padding: '0.875rem',
+                                            background: 'white',
+                                            border: '1px solid #e5e7eb',
+                                            borderRadius: '0.5rem',
+                                            transition: 'all 0.2s',
+                                            cursor: 'pointer',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.boxShadow = 'none';
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                        }}
+                                    >
+                                        {/* Product Header */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '0.75rem',
+                                            marginBottom: '0.75rem',
+                                        }}>
+                                            {/* Product Icon */}
+                                            <div style={{
+                                                width: '48px',
+                                                height: '48px',
+                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                borderRadius: '0.5rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '1.5rem',
+                                                flexShrink: 0,
+                                            }}>
+                                                📦
+                                            </div>
+
+                                            {/* Product Info */}
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{
+                                                    fontWeight: '600',
+                                                    fontSize: '0.9rem',
+                                                    color: '#1f2937',
+                                                    marginBottom: '0.25rem',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                }}>
+                                                    {product.nameAr || product.nameEn}
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '0.75rem',
+                                                    color: '#6b7280',
+                                                    fontFamily: 'monospace',
+                                                }}>
+                                                    {product.code || product.barcode}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Divider */}
+                                        <div style={{
+                                            height: '1px',
+                                            background: '#e5e7eb',
+                                            margin: '0.75rem 0',
+                                        }} />
+
+                                        {/* Product Details */}
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                        }}>
+                                            {/* Stock Badge */}
+                                            <div style={{
+                                                fontSize: '0.75rem',
+                                                padding: '0.375rem 0.625rem',
+                                                background: isOutOfStock
+                                                    ? '#fee2e2'
+                                                    : isLowStock
+                                                        ? '#fef3c7'
+                                                        : '#d1fae5',
+                                                color: isOutOfStock
+                                                    ? '#991b1b'
+                                                    : isLowStock
+                                                        ? '#92400e'
+                                                        : '#065f46',
+                                                borderRadius: '0.375rem',
+                                                fontWeight: '600',
+                                            }}>
+                                                {stock} {product.unit || 'وحدة'}
+                                                {isOutOfStock && ' ⚠️'}
+                                                {isLowStock && !isOutOfStock && ' ⚡'}
+                                            </div>
+
+                                            {/* Price */}
+                                            <div style={{
+                                                fontSize: '0.95rem',
+                                                fontWeight: '700',
+                                                color: '#6366f1',
+                                            }}>
+                                                {Number(product.priceRetail || 0).toFixed(2)} ر.س
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                                        {product.name}
-                                    </div>
-                                </div>
-                            </div>
-                        ))
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             )}
@@ -1150,7 +1272,7 @@ function MixedCategoryProducts({ categoryId }: { categoryId: number }) {
     const loadMixedProducts = async () => {
         try {
             setLoading(true);
-            const { data } = await apiClient.get(`/products?categoryId=${categoryId}`);
+            const { data } = await apiClient.get(`/products?categoryId=${categoryId}&active=true`);
             setProducts(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Failed to load mixed products:', error);

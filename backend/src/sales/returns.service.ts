@@ -2,13 +2,88 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { CreateReturnDto, ReturnType } from './dto/returns.dto';
 import { ProductAuditService } from '../products/product-audit.service';
+import { SalesService } from './sales.service';
 
 @Injectable()
 export class ReturnsService {
     constructor(
         private prisma: PrismaService,
         private productAuditService: ProductAuditService,
+        private salesService: SalesService,
     ) { }
+
+    async checkDefectiveProduct(productId: number) {
+        const originalProduct = await this.prisma.product.findUnique({
+            where: { id: productId },
+        });
+
+        if (!originalProduct) {
+            throw new NotFoundException(`Product ${productId} not found`);
+        } // ✅ ADD THIS
+
+        // Find defective category
+        const defectiveCategory = await this.prisma.category.findFirst({
+            where: {
+                OR: [
+                    { name: { equals: 'Defective', mode: 'insensitive' } },
+                    { nameAr: 'تلافيات' },
+                ],
+            },
+        });
+
+        if (!defectiveCategory) {
+            return {
+                exists: false,
+                originalProduct: {
+                    id: originalProduct.id,
+                    nameAr: originalProduct.nameAr,
+                    nameEn: originalProduct.nameEn,
+                    priceRetail: originalProduct.priceRetail,
+                    priceWholesale: originalProduct.priceWholesale,
+                },
+            };
+        } // ✅ ADD THIS TOO
+
+        // Check if defective product exists
+        const defectiveBarcode = `${originalProduct.barcode}_DEF`;
+        const defectiveProduct = await this.prisma.product.findFirst({
+            where: {
+                barcode: defectiveBarcode,
+                categoryId: defectiveCategory.id,
+            },
+        });
+
+        if (defectiveProduct) {
+            return {
+                exists: true,
+                defectiveProduct: {
+                    id: defectiveProduct.id,
+                    code: defectiveProduct.code,
+                    priceRetail: defectiveProduct.priceRetail,
+                    priceWholesale: defectiveProduct.priceWholesale,
+                },
+                originalProduct: {
+                    id: originalProduct.id,
+                    nameAr: originalProduct.nameAr,
+                    nameEn: originalProduct.nameEn,
+                    priceRetail: originalProduct.priceRetail,
+                    priceWholesale: originalProduct.priceWholesale,
+                },
+            };
+        }
+
+        return {
+            exists: false,
+            originalProduct: {
+                id: originalProduct.id,
+                nameAr: originalProduct.nameAr,
+                nameEn: originalProduct.nameEn,
+                priceRetail: originalProduct.priceRetail,
+                priceWholesale: originalProduct.priceWholesale,
+            },
+        };
+    }
+
 
     async createReturn(data: CreateReturnDto & { userId: number }) {
         const { salesInvoiceId, items, reason, userId } = data;
@@ -160,6 +235,12 @@ export class ReturnsService {
 
         await Promise.all(auditPromises);
 
+        try {
+            await this.salesService.recalculateProfitAfterReturn(salesInvoiceId);
+        } catch (error) {
+            console.error('⚠️ Failed to recalculate profit:', error);
+        }
+
         console.log(`✅ Return ${returnNo} processed with ${items.length} items`);
         return salesReturn;
     }
@@ -214,7 +295,6 @@ export class ReturnsService {
         });
     }
 
-    // ✅ HELPER: Handle defective product return
     private async handleDefectiveReturn(
         item: any,
         stockLocationId: number,
@@ -222,16 +302,18 @@ export class ReturnsService {
         salesInvoice: any,
         userId: number,
     ) {
-        // Get original product
         const originalProduct = await this.prisma.product.findUnique({
             where: { id: item.productId },
+            include: {
+                category: true,
+                itemType: true,
+            },
         });
 
         if (!originalProduct) {
             throw new NotFoundException(`Product ${item.productId} not found`);
         }
 
-        // Find or create Defective category
         let defectiveCategory = await this.prisma.category.findFirst({
             where: {
                 OR: [
@@ -249,27 +331,47 @@ export class ReturnsService {
                     active: true,
                 },
             });
-            console.log('✅ Created Defective category');
         }
 
-        // Check if defective version of this product exists
+        // ✅ FIXED: Use consistent barcode pattern to find existing defective product
         const defectiveBarcode = `${originalProduct.barcode}_DEF`;
+
         let defectiveProduct = await this.prisma.product.findFirst({
             where: {
-                OR: [
-                    { barcode: defectiveBarcode },
-                    {
-                        AND: [
-                            { nameEn: { contains: originalProduct.nameEn } },
-                            { categoryId: defectiveCategory.id },
-                        ],
-                    },
-                ],
+                barcode: defectiveBarcode,
+                categoryId: defectiveCategory.id,
             },
         });
 
-        if (!defectiveProduct) {
-            // Create new defective product
+        if (defectiveProduct) {
+            console.log(
+                `♻️ Reusing existing defective product: ${defectiveProduct.code} (Barcode: ${defectiveBarcode})`,
+            );
+
+            // Update prices if provided
+            if (item.defectedProductPricing) {
+                const { priceRetail, priceWholesale } = item.defectedProductPricing;
+                defectiveProduct = await this.prisma.product.update({
+                    where: { id: defectiveProduct.id },
+                    data: {
+                        priceRetail,
+                        priceWholesale,
+                    },
+                });
+                console.log(
+                    `📝 Updated prices: Retail ${priceRetail}, Wholesale ${priceWholesale}`,
+                );
+            }
+        } else {
+            // Validate pricing for new defective product
+            if (!item.defectedProductPricing) {
+                throw new BadRequestException(
+                    `Defected product pricing is required for new defective product: ${originalProduct.nameAr || originalProduct.nameEn}`,
+                );
+            }
+
+            const { priceRetail, priceWholesale } = item.defectedProductPricing;
+
             const lastProduct = await this.prisma.product.findFirst({
                 orderBy: { id: 'desc' },
             });
@@ -279,16 +381,16 @@ export class ReturnsService {
             defectiveProduct = await this.prisma.product.create({
                 data: {
                     code: defectiveCode,
-                    barcode: defectiveBarcode,
+                    barcode: defectiveBarcode, // Consistent barcode without timestamp
                     nameEn: `${originalProduct.nameEn} (Defective)`,
                     nameAr: `${originalProduct.nameAr || originalProduct.nameEn} (تالف)`,
                     categoryId: defectiveCategory.id,
-                    itemTypeId: null, // Special category, no itemType
+                    itemTypeId: null,
                     brand: originalProduct.brand,
                     unit: originalProduct.unit,
-                    cost: 0, // Defective items have no value
-                    priceRetail: 0,
-                    priceWholesale: 0,
+                    cost: originalProduct.cost,
+                    priceRetail: priceRetail,
+                    priceWholesale: priceWholesale,
                     minQty: 0,
                     maxQty: null,
                     active: true,
@@ -296,16 +398,16 @@ export class ReturnsService {
             });
 
             console.log(
-                `✅ Created defective product: ${defectiveProduct.code} for ${originalProduct.code}`,
+                `✅ Created NEW defective product: ${defectiveProduct.code} (Barcode: ${defectiveBarcode}) | Retail: ${priceRetail}, Wholesale: ${priceWholesale}`,
             );
         }
 
-        // Add stock movement to defective product
+        // Add stock movement
         await this.prisma.stockMovement.create({
             data: {
                 productId: defectiveProduct.id,
                 stockLocationId,
-                qtyChange: item.qtyReturned, // Add to defective inventory
+                qtyChange: item.qtyReturned,
                 movementType: 'RETURN',
                 refTable: 'sales_returns',
                 refId: salesReturn.id,
@@ -315,10 +417,9 @@ export class ReturnsService {
         });
 
         console.log(
-            `⚠️ DEFECTIVE RETURN: Product ID ${item.productId} → Defective Product ID ${defectiveProduct.id}, Qty: ${item.qtyReturned}`,
+            `⚠️ DEFECTIVE RETURN: Product ${originalProduct.code} → ${defectiveProduct.code}, Qty: +${item.qtyReturned}`,
         );
 
-        // Create audit log
         return this.prisma.productAudit.create({
             data: {
                 productId: defectiveProduct.id,
@@ -335,15 +436,23 @@ export class ReturnsService {
                     },
                 },
                 newData: {
+                    defectiveProduct: {
+                        id: defectiveProduct.id,
+                        code: defectiveProduct.code,
+                        barcode: defectiveProduct.barcode,
+                    },
                     stockMovement: {
                         qtyChange: item.qtyReturned,
                         movementType: 'RETURN',
-                        defectiveProductId: defectiveProduct.id,
                     },
                 },
             },
         });
     }
+
+
+
+
 
     // ... keep rest of the methods (findAll, etc.)
     async findAll(params: {

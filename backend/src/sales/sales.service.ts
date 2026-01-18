@@ -78,7 +78,7 @@ export class SalesService {
     }
 
     // Step 4: Calculate final total
-    const total = subtotalAfterDiscount + totalTax;
+    const total = subtotalAfterDiscount + totalTax + shippingFee;
 
     // ✅ Step 5: Calculate Profit
     let costOfGoods = 0;
@@ -504,7 +504,6 @@ export class SalesService {
       this.prisma.salesInvoice.count({ where }),
     ]);
 
-    // Convert Decimal to number for frontend
     const itemsWithNumbers = items.map((sale) => ({
       ...sale,
       subtotal: Number(sale.subtotal),
@@ -513,13 +512,29 @@ export class SalesService {
       totalDiscount: Number(sale.totalDiscount),
       platformCommission: Number(sale.platformCommission),
       shippingFee: Number(sale.shippingFee),
-      paidAmount: Number(sale.paidAmount), // ✅ NEW
-      remainingAmount: Number(sale.remainingAmount), // ✅ NEW
-      costOfGoods: sale.costOfGoods ? Number(sale.costOfGoods) : undefined,
-      grossProfit: sale.grossProfit ? Number(sale.grossProfit) : undefined,
-      netProfit: sale.netProfit ? Number(sale.netProfit) : undefined,
-      profitMargin: sale.profitMargin ? Number(sale.profitMargin) : undefined,
+      paidAmount: Number(sale.paidAmount),
+      remainingAmount: Number(sale.remainingAmount),
+
+      // ADD THESE:
+      totalRefunded: sale.totalRefunded ? Number(sale.totalRefunded) : 0,
+      netRevenue: sale.netRevenue ? Number(sale.netRevenue) : Number(sale.total),
+
+      // FIX PROFIT FIELDS - Check for null/undefined properly:
+      costOfGoods: sale.costOfGoods !== null && sale.costOfGoods !== undefined
+        ? Number(sale.costOfGoods)
+        : undefined,
+      grossProfit: sale.grossProfit !== null && sale.grossProfit !== undefined
+        ? Number(sale.grossProfit)
+        : undefined,
+      netProfit: sale.netProfit !== null && sale.netProfit !== undefined
+        ? Number(sale.netProfit)
+        : undefined,
+      profitMargin: sale.profitMargin !== null && sale.profitMargin !== undefined
+        ? Number(sale.profitMargin)
+        : undefined,
     }));
+
+
 
     return {
       data: itemsWithNumbers,
@@ -638,6 +653,7 @@ export class SalesService {
     };
   }
 
+
   private async generateInvoiceNo(branchId: number): Promise<string> {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -670,4 +686,74 @@ export class SalesService {
 
     return `${branch.code}-${datePrefix}-${String(sequence).padStart(4, '0')}`;
   }
+  // ✅ NEW: Recalculate profit after returns
+  async recalculateProfitAfterReturn(salesInvoiceId: number) {
+    const invoice = await this.prisma.salesInvoice.findUnique({
+      where: { id: salesInvoiceId },
+      include: {
+        lines: { include: { product: true } },
+        returns: { include: { lines: { include: { product: true } } } },
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Invoice ${salesInvoiceId} not found`);
+    }
+
+    // ✅ STEP 1: Calculate total refunded amount
+    const totalRefunded = invoice.returns.reduce(
+      (sum, ret) => sum + Number(ret.totalRefund || 0),
+      0,
+    );
+
+    const originalTotal = Number(invoice.total);
+    const netRevenue = originalTotal - totalRefunded;
+
+    // ✅ STEP 2: Calculate ACTUAL cost of returned items
+    let returnedCost = 0;
+    for (const returnRecord of invoice.returns) {
+      for (const returnLine of returnRecord.lines) {
+        const product = returnLine.product;
+        if (product && product.cost) {
+          returnedCost += Number(product.cost) * returnLine.qtyReturned;
+        }
+      }
+    }
+
+    // ✅ STEP 3: Calculate remaining cost (original - returned)
+    const originalCost = Number(invoice.costOfGoods || 0);
+    const remainingCost = originalCost - returnedCost;
+
+    // ✅ STEP 4: Adjust tax, commission, shipping proportionally
+    const remainingProportion = originalTotal > 0 ? netRevenue / originalTotal : 1;
+    const adjustedTax = Number(invoice.totalTax || 0) * remainingProportion;
+    const adjustedCommission = Number(invoice.platformCommission || 0) * remainingProportion;
+    const adjustedShipping = Number(invoice.shippingFee || 0) * remainingProportion;
+
+    // ✅ STEP 5: Calculate profit with correct cost
+    const actualRevenue = netRevenue - adjustedTax;
+    const grossProfit = actualRevenue - remainingCost;
+    const netProfit = grossProfit - adjustedCommission - adjustedShipping;
+    const profitMargin = netRevenue > 0 ? (netProfit / netRevenue) * 100 : 0;
+
+    // ✅ STEP 6: Update the invoice
+    await this.prisma.salesInvoice.update({
+      where: { id: salesInvoiceId },
+      data: {
+        totalRefunded: new Prisma.Decimal(totalRefunded),
+        netRevenue: new Prisma.Decimal(netRevenue),
+        costOfGoods: new Prisma.Decimal(remainingCost),
+        grossProfit: new Prisma.Decimal(grossProfit),
+        netProfit: new Prisma.Decimal(netProfit),
+        profitMargin: new Prisma.Decimal(profitMargin),
+      },
+    });
+
+    console.log(`✅ Profit recalculated for invoice ${invoice.invoiceNo}:`);
+    console.log(`   Original Cost: ${originalCost.toFixed(2)}, Returned Cost: ${returnedCost.toFixed(2)}`);
+    console.log(`   Remaining Cost: ${remainingCost.toFixed(2)}, Net Profit: ${netProfit.toFixed(2)}`);
+
+    return { originalTotal, totalRefunded, netRevenue, netProfit, profitMargin };
+  }
+
 }
