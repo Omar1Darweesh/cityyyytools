@@ -410,17 +410,38 @@ export class SalesService {
     take?: number;
     branchId?: number;
     customerId?: number;
+    userId?: number;        // ✅ NEW
+    channel?: string;       // ✅ NEW
     search?: string;
     paymentMethod?: string;
     dateFilter?: string;
     startDate?: string;
     endDate?: string;
   }) {
-    const { skip, take, branchId, customerId, search, paymentMethod, dateFilter, startDate, endDate } = params;
+    const {
+      skip,
+      take,
+      branchId,
+      customerId,
+      userId,           // ✅ NEW
+      channel,          // ✅ NEW
+      search,
+      paymentMethod,
+      dateFilter,
+      startDate,
+      endDate
+    } = params;
+
     const where: any = {};
 
     if (branchId) where.branchId = branchId;
     if (customerId) where.customerId = customerId;
+
+    // ✅ NEW: User filter
+    if (userId) where.createdBy = userId;
+
+    // ✅ NEW: Channel filter
+    if (channel) where.channel = channel;
 
     // Payment method filter
     if (paymentMethod && paymentMethod !== 'ALL') {
@@ -490,6 +511,7 @@ export class SalesService {
           customer: true,
           user: {
             select: {
+              id: true,
               fullName: true,
               username: true,
             },
@@ -540,6 +562,44 @@ export class SalesService {
       data: itemsWithNumbers,
       total,
     };
+  }
+
+
+  // ✅ NEW: Get all customers
+  async getAllCustomers() {
+    const customers = await this.prisma.customer.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return customers;
+  }
+
+  // ✅ NEW: Get unique channels from database
+  async getUniqueChannels() {
+    const channels = await this.prisma.salesInvoice.findMany({
+      where: {
+        channel: {
+          not: null,
+        },
+      },
+      select: {
+        channel: true,
+      },
+      distinct: ['channel'],
+    });
+
+    // Extract unique channel values
+    const uniqueChannels = channels
+      .map(sale => sale.channel)
+      .filter(channel => channel !== null && channel !== '');
+
+    return uniqueChannels;
   }
 
   async findOne(id: number) {

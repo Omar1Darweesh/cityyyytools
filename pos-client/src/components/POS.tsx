@@ -1342,7 +1342,7 @@ function POS() {
                                         onClick={() => {
                                             setPaymentType('PARTIAL');
                                             setPaidAmount(0);
-                                            setDeliveredNow(false);
+                                            setDeliveredNow(true);
                                         }}
                                         style={{
                                             padding: '12px',
@@ -1363,7 +1363,7 @@ function POS() {
                                         onClick={() => {
                                             setPaymentType('CREDIT');
                                             setPaidAmount(0);
-                                            setDeliveredNow(false);
+                                            setDeliveredNow(true);
                                         }}
                                         style={{
                                             padding: '12px',
@@ -2285,16 +2285,9 @@ function POS() {
                 )}
 
 
-                {/* Print-only receipt - matches SalesDetail.tsx format */}
+                {/* Print-only receipt - BOLD & BLACK/WHITE */}
                 {receiptData && (
-                    <div
-                        className="thermal-receipt-print"
-                        style={{
-                            position: 'fixed',
-                            left: '-9999px',
-                            top: '0',
-                        }}
-                    >
+                    <div className="thermal-receipt-print" style={{ position: 'fixed', left: '-9999px', top: 0 }}>
                         <div style={{
                             width: '80mm',
                             background: 'white',
@@ -2304,48 +2297,53 @@ function POS() {
                             color: '#000',
                             lineHeight: 1.4
                         }}>
+
                             {/* Header */}
                             <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px' }}>
+                                <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: '#000' }}>
                                     City Tools System
                                 </div>
-                                <div style={{ fontSize: '11px', marginBottom: '2px' }}>
+                                <div style={{ fontSize: '11px', marginBottom: '2px', fontWeight: 'bold', color: '#000' }}>
                                     {receiptData.branch?.name}
                                 </div>
-                                <div style={{ fontSize: '10px', color: '#666' }}>
-                                    {/* Add store address or phone here if available */}
+                                <div style={{ fontSize: '10px', color: '#000', fontWeight: '600' }}>
+                                    نظام إدارة الأدوات والمبيعات
                                 </div>
                             </div>
 
                             <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
 
                             {/* Invoice Info */}
-                            <div style={{ fontSize: '11px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '11px', marginBottom: '8px', fontWeight: '600' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                    <span>رقم الفاتورة:</span>
-                                    <span style={{ fontWeight: 'bold' }}>{receiptData.invoiceNo}</span>
+                                    <span style={{ color: '#000' }}>رقم الفاتورة:</span>
+                                    <span style={{ fontWeight: 'bold', color: '#000' }}>{receiptData.invoiceNo}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                    <span>التاريخ:</span>
-                                    <span>{new Date(receiptData.createdAt).toLocaleDateString('ar-EG')}</span>
+                                    <span style={{ color: '#000' }}>التاريخ:</span>
+                                    <span style={{ color: '#000' }}>
+                                        {new Date(receiptData.createdAt).toLocaleDateString('ar-EG')}
+                                    </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                    <span>الوقت:</span>
-                                    <span>{new Date(receiptData.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span style={{ color: '#000' }}>الوقت:</span>
+                                    <span style={{ color: '#000' }}>
+                                        {new Date(receiptData.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                    <span>الكاشير:</span>
-                                    <span>{receiptData.user.fullName}</span>
+                                    <span style={{ color: '#000' }}>الموظف:</span>
+                                    <span style={{ color: '#000' }}>{receiptData.user.fullName}</span>
                                 </div>
                                 {receiptData.customer && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                        <span>العميل:</span>
-                                        <span>{receiptData.customer.name}</span>
+                                        <span style={{ color: '#000' }}>العميل:</span>
+                                        <span style={{ color: '#000' }}>{receiptData.customer.name}</span>
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                    <span>طريقة الدفع:</span>
-                                    <span>{receiptData.paymentMethod}</span>
+                                    <span style={{ color: '#000' }}>الدفع:</span>
+                                    <span style={{ color: '#000' }}>{receiptData.paymentMethod}</span>
                                 </div>
                             </div>
 
@@ -2357,12 +2355,12 @@ function POS() {
                                     const lineSubtotal = line.qty * Number(line.price);
                                     return (
                                         <div key={line.id} style={{ marginBottom: '6px' }}>
-                                            <div style={{ fontWeight: 'bold', fontSize: '11px' }}>
+                                            <div style={{ fontWeight: 'bold', fontSize: '11px', color: '#000' }}>
                                                 {line.nameAr || line.nameEn}
                                             </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                                                <span>{line.qty} x {Number(line.price).toFixed(2)}</span>
-                                                <span style={{ fontWeight: 'bold' }}>{lineSubtotal.toFixed(2)} ج.م</span>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '600' }}>
+                                                <span style={{ color: '#000' }}>{line.qty} x {Number(line.price).toFixed(2)}</span>
+                                                <span style={{ fontWeight: 'bold', color: '#000' }}>{lineSubtotal.toFixed(2)} ر.س</span>
                                             </div>
                                         </div>
                                     );
@@ -2372,30 +2370,27 @@ function POS() {
                             <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
 
                             {/* Totals */}
-                            <div style={{ fontSize: '11px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '11px', marginBottom: '8px', fontWeight: '600' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                    <span>المجموع الفرعي:</span>
-                                    <span>{Number(receiptData.totals.subtotal).toFixed(2)} ج.م</span>
+                                    <span style={{ color: '#000' }}>المجموع الفرعي:</span>
+                                    <span style={{ color: '#000' }}>{Number(receiptData.totals.subtotal).toFixed(2)} ر.س</span>
                                 </div>
-
                                 {Number(receiptData.totals.discountAmount) > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                        <span>الخصم:</span>
-                                        <span>-{Number(receiptData.totals.discountAmount).toFixed(2)} ج.م</span>
+                                        <span style={{ color: '#000' }}>الخصم:</span>
+                                        <span style={{ color: '#000' }}>-{Number(receiptData.totals.discountAmount).toFixed(2)} ر.س</span>
                                     </div>
                                 )}
-
                                 {Number(receiptData.totals.taxAmount) > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                        <span>الضريبة:</span>
-                                        <span>{Number(receiptData.totals.taxAmount).toFixed(2)} ج.م</span>
+                                        <span style={{ color: '#000' }}>الضريبة:</span>
+                                        <span style={{ color: '#000' }}>+{Number(receiptData.totals.taxAmount).toFixed(2)} ر.س</span>
                                     </div>
                                 )}
-
                                 {Number(receiptData.totals.shippingFee) > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                        <span>رسوم الشحن:</span>
-                                        <span>{Number(receiptData.totals.shippingFee).toFixed(2)} ج.م</span>
+                                        <span style={{ color: '#000' }}>الشحن:</span>
+                                        <span style={{ color: '#000' }}>{Number(receiptData.totals.shippingFee).toFixed(2)} ر.س</span>
                                     </div>
                                 )}
                             </div>
@@ -2404,44 +2399,39 @@ function POS() {
 
                             {/* Final Total */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}>
-                                <span>الإجمالي:</span>
-                                <span>{Number(receiptData.totals.finalTotal).toFixed(2)} ج.م</span>
+                                <span style={{ color: '#000' }}>الإجمالي:</span>
+                                <span style={{ color: '#000' }}>{Number(receiptData.totals.finalTotal).toFixed(2)} ر.س</span>
                             </div>
 
                             <div style={{ borderTop: '2px solid #000', margin: '8px 0' }} />
 
                             {/* Payment Info for Partial/Credit */}
                             {receiptData.paymentType === 'PARTIAL' && (
-                                <div style={{ fontSize: '11px', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '11px', marginBottom: '8px', fontWeight: '600' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                        <span>المدفوع:</span>
-                                        <span style={{ fontWeight: 'bold', color: '#16a34a' }}>
-                                            {Number(receiptData.paidAmount).toFixed(2)} ج.م
+                                        <span style={{ color: '#000' }}>المدفوع:</span>
+                                        <span style={{ fontWeight: 'bold', color: '#000' }}>
+                                            {Number(receiptData.paidAmount).toFixed(2)} ر.س
                                         </span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span>المتبقي:</span>
-                                        <span style={{ fontWeight: 'bold', color: '#dc2626' }}>
-                                            {(Number(receiptData.totals.finalTotal) - Number(receiptData.paidAmount)).toFixed(2)} ج.م
+                                        <span style={{ color: '#000' }}>المتبقي:</span>
+                                        <span style={{ fontWeight: 'bold', color: '#000' }}>
+                                            {(Number(receiptData.totals.finalTotal) - Number(receiptData.paidAmount)).toFixed(2)} ر.س
                                         </span>
                                     </div>
                                 </div>
                             )}
 
                             {receiptData.paymentType === 'CREDIT' && (
-                                <div style={{ fontSize: '11px', marginBottom: '8px', background: '#fee2e2', padding: '5px', borderRadius: '4px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#991b1b' }}>
-                                        <span style={{ fontWeight: 'bold' }}>آجل:</span>
-                                        <span style={{ fontWeight: 'bold' }}>
-                                            {Number(receiptData.totals.finalTotal).toFixed(2)} ج.م
-                                        </span>
-                                    </div>
+                                <div style={{ fontSize: '11px', marginBottom: '8px', background: '#000', color: '#fff', padding: '5px', borderRadius: '4px', textAlign: 'center', fontWeight: 'bold' }}>
+                                    <div>آجل - المبلغ الكامل: {Number(receiptData.totals.finalTotal).toFixed(2)} ر.س</div>
                                 </div>
                             )}
 
                             {/* Notes */}
                             {receiptData.config?.name && (
-                                <div style={{ fontSize: '10px', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '10px', marginBottom: '8px', fontWeight: '600', color: '#000' }}>
                                     <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>ملاحظات:</div>
                                     <div>{receiptData.config.name} - {receiptData.paymentMethod}</div>
                                 </div>
@@ -2450,12 +2440,10 @@ function POS() {
                             <div style={{ borderTop: '2px solid #000', margin: '8px 0' }} />
 
                             {/* Footer */}
-                            <div style={{ textAlign: 'center', fontSize: '11px', marginTop: '10px' }}>
-                                <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>شكراً لزيارتكم</div>
-                                <div style={{ fontSize: '9px', marginBottom: '4px' }}>Thank you for your business</div>
-                                <div style={{ fontSize: '9px', color: '#666' }}>
-                                    {new Date().toLocaleString('ar-EG')}
-                                </div>
+                            <div style={{ textAlign: 'center', fontSize: '11px', marginTop: '10px', color: '#000' }}>
+                                <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>شكراً لتعاملكم معنا</div>
+                                <div style={{ fontSize: '9px', marginBottom: '4px', fontWeight: '600' }}>Thank you for your business</div>
+                                <div style={{ fontSize: '9px', fontWeight: '600' }}>{new Date().toLocaleString('ar-EG')}</div>
                             </div>
 
                             {/* Barcode Simulation */}
@@ -2463,11 +2451,13 @@ function POS() {
                                 <div style={{ background: '#000', height: '2px', width: '60%', margin: '0 auto 2px' }} />
                                 <div style={{ background: '#000', height: '3px', width: '50%', margin: '0 auto 2px' }} />
                                 <div style={{ background: '#000', height: '2px', width: '70%', margin: '0 auto 4px' }} />
-                                <div>{receiptData.invoiceNo}</div>
+                                <div style={{ fontWeight: 'bold', color: '#000' }}>{receiptData.invoiceNo}</div>
                             </div>
+
                         </div>
                     </div>
                 )}
+
             </div>
         </>
     );

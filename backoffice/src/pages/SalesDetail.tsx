@@ -304,7 +304,7 @@ export default function SalesDetail() {
                     </div>
                 </div>
 
-                {/* Thermal Receipt (Same as before) */}
+                {/* Thermal Receipt - BOLD & BLACK/WHITE FOR PRINT */}
                 <div className="thermal-receipt" style={{
                     maxWidth: '80mm',
                     margin: '0 auto',
@@ -317,40 +317,44 @@ export default function SalesDetail() {
                 }}>
                     {/* Header */}
                     <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: '#000' }}>
                             City Tools System
                         </div>
-                        <div style={{ fontSize: '11px', marginBottom: '2px' }}>{sale.branch.name}</div>
-                        <div style={{ fontSize: '10px', color: '#666' }}>نظام إدارة الأدوات والمبيعات</div>
+                        <div style={{ fontSize: '11px', marginBottom: '2px', fontWeight: 'bold', color: '#000' }}>
+                            {sale.branch.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#000', fontWeight: '600' }}>
+                            نظام إدارة الأدوات والمبيعات
+                        </div>
                     </div>
 
                     <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
 
                     {/* Invoice Info */}
-                    <div style={{ fontSize: '11px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', marginBottom: '8px', fontWeight: '600' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>رقم الفاتورة:</span>
-                            <span style={{ fontWeight: 'bold' }}>{sale.invoiceNo}</span>
+                            <span style={{ color: '#000' }}>رقم الفاتورة:</span>
+                            <span style={{ fontWeight: 'bold', color: '#000' }}>{sale.invoiceNo}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>التاريخ:</span>
-                            <span>{new Date(sale.createdAt).toLocaleDateString('ar-EG')}</span>
+                            <span style={{ color: '#000' }}>التاريخ:</span>
+                            <span style={{ color: '#000' }}>{new Date(sale.createdAt).toLocaleDateString('ar-EG')}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>الوقت:</span>
-                            <span>{new Date(sale.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span style={{ color: '#000' }}>الوقت:</span>
+                            <span style={{ color: '#000' }}>{new Date(sale.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>الموظف:</span>
-                            <span>{sale.user.fullName}</span>
+                            <span style={{ color: '#000' }}>الموظف:</span>
+                            <span style={{ color: '#000' }}>{sale.user.fullName}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>العميل:</span>
-                            <span>{sale.customer?.name || 'نقدي'}</span>
+                            <span style={{ color: '#000' }}>العميل:</span>
+                            <span style={{ color: '#000' }}>{sale.customer?.name || 'نقدي'}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>الدفع:</span>
-                            <span>{sale.paymentMethod}</span>
+                            <span style={{ color: '#000' }}>الدفع:</span>
+                            <span style={{ color: '#000' }}>{sale.paymentMethod}</span>
                         </div>
                     </div>
 
@@ -359,73 +363,71 @@ export default function SalesDetail() {
                     {/* Products */}
                     <div style={{ marginBottom: '8px' }}>
                         {sale.lines.map(line => {
-                            // ✅ Calculate line subtotal (before tax)
                             const lineSubtotal = line.qty * Number(line.unitPrice);
 
                             return (
                                 <div key={line.id} style={{ marginBottom: '6px' }}>
-                                    <div style={{ fontWeight: 'bold', fontSize: '11px' }}>
+                                    <div style={{ fontWeight: 'bold', fontSize: '11px', color: '#000' }}>
                                         {line.product.nameAr || line.product.nameEn}
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                                        <span>{line.qty} x {Number(line.unitPrice).toFixed(2)}</span>
-                                        {/* ✅ Show subtotal without tax */}
-                                        <span style={{ fontWeight: 'bold' }}>{lineSubtotal.toFixed(2)} ر.س</span>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '600' }}>
+                                        <span style={{ color: '#000' }}>{line.qty} x {Number(line.unitPrice).toFixed(2)}</span>
+                                        <span style={{ fontWeight: 'bold', color: '#000' }}>{lineSubtotal.toFixed(2)} ر.س</span>
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
 
-
                     <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
 
                     {/* Totals */}
-                    <div style={{ fontSize: '11px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', marginBottom: '8px', fontWeight: '600' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                            <span>المجموع الفرعي:</span>
-                            <span>{Number(sale.subtotal).toFixed(2)} ر.س</span>
+                            <span style={{ color: '#000' }}>المجموع الفرعي:</span>
+                            <span style={{ color: '#000' }}>{Number(sale.subtotal).toFixed(2)} ر.س</span>
                         </div>
                         {Number(sale.totalDiscount) > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                <span>الخصم:</span>
-                                <span>-{Number(sale.totalDiscount).toFixed(2)} ر.س</span>
+                                <span style={{ color: '#000' }}>الخصم:</span>
+                                <span style={{ color: '#000' }}>-{Number(sale.totalDiscount).toFixed(2)} ر.س</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                            <span>الضريبة:</span>
-                            <span>+{Number(sale.totalTax).toFixed(2)} ر.س</span>
+                            <span style={{ color: '#000' }}>الضريبة:</span>
+                            <span style={{ color: '#000' }}>+{Number(sale.totalTax).toFixed(2)} ر.س</span>
                         </div>
                     </div>
 
                     <div style={{ borderTop: '2px solid #000', margin: '8px 0' }} />
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}>
-                        <span>الإجمالي:</span>
-                        <span>{Number(sale.total).toFixed(2)} ر.س</span>
+                        <span style={{ color: '#000' }}>الإجمالي:</span>
+                        <span style={{ color: '#000' }}>{Number(sale.total).toFixed(2)} ر.س</span>
                     </div>
 
                     <div style={{ borderTop: '2px solid #000', margin: '8px 0' }} />
 
                     {sale.notes && (
-                        <div style={{ fontSize: '10px', marginBottom: '8px' }}>
+                        <div style={{ fontSize: '10px', marginBottom: '8px', fontWeight: '600', color: '#000' }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>ملاحظات:</div>
                             <div>{sale.notes}</div>
                         </div>
                     )}
 
-                    <div style={{ textAlign: 'center', fontSize: '11px', marginTop: '10px' }}>
+                    <div style={{ textAlign: 'center', fontSize: '11px', marginTop: '10px', color: '#000' }}>
                         <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>شكراً لتعاملكم معنا</div>
-                        <div style={{ fontSize: '9px', marginBottom: '4px' }}>Thank you for your business</div>
-                        <div style={{ fontSize: '9px', color: '#666' }}>{new Date().toLocaleString('ar-EG')}</div>
+                        <div style={{ fontSize: '9px', marginBottom: '4px', fontWeight: '600' }}>Thank you for your business</div>
+                        <div style={{ fontSize: '9px', fontWeight: '600' }}>{new Date().toLocaleString('ar-EG')}</div>
                     </div>
 
                     <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '10px' }}>
                         <div style={{ background: '#000', height: '2px', width: '60%', margin: '0 auto 2px' }} />
                         <div style={{ background: '#000', height: '3px', width: '50%', margin: '0 auto 2px' }} />
                         <div style={{ background: '#000', height: '2px', width: '70%', margin: '0 auto 4px' }} />
-                        <div>{sale.invoiceNo}</div>
+                        <div style={{ fontWeight: 'bold', color: '#000' }}>{sale.invoiceNo}</div>
                     </div>
+
                 </div>
 
                 {/* Screen-only Details */}

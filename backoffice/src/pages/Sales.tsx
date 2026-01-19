@@ -19,46 +19,80 @@ interface Sale {
     remainingAmount: number;
     channel?: string;
     customer?: { name: string };
-    user?: { fullName: string };
+    user?: { fullName: string; id: number };
     branch?: { name: string };
     costOfGoods?: number;
     grossProfit?: number;
     netProfit?: number;
     profitMargin?: number;
-    // ADD THESE TWO FIELDS:
     totalRefunded?: number;
     netRevenue?: number;
 }
 
+// ✅ NEW: Add interfaces for users and customers
+interface User {
+    id: number;
+    fullName: string;
+}
+
+interface Customer {
+    id: number;
+    name: string;
+}
 
 export default function Sales() {
     const navigate = useNavigate();
     const [sales, setSales] = useState<Sale[]>([]);
     const [loading, setLoading] = useState(true);
+    const [users, setUsers] = useState<User[]>([]);
+    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [channels, setChannels] = useState<string[]>([]); // ✅ NEW
+
+    // ✅ UPDATED: Add new filter fields
     const [filters, setFilters] = useState({
         dateFilter: 'all',
         paymentMethod: 'ALL',
+        userId: 'ALL',        // ✅ NEW
+        customerId: 'ALL',    // ✅ NEW
+        channel: 'ALL',       // ✅ NEW
         startDate: '',
         endDate: '',
         search: '',
     });
+
     const [showFilters, setShowFilters] = useState(false);
+
+    // ✅ NEW: Fetch users and customers for dropdowns
+    useEffect(() => {
+        fetchUsersAndCustomers();
+    }, []);
+
+    const fetchUsersAndCustomers = async () => {
+        try {
+            // Fetch users
+            const usersRes = await apiClient.get('/users');
+            setUsers(usersRes.data.data || usersRes.data || []);
+
+            // ✅ FIXED: Correct endpoint
+            const customersRes = await apiClient.get('/pos/customers');
+            setCustomers(customersRes.data || []);
+
+            // ✅ NEW: Fetch channels from database
+            const channelsRes = await apiClient.get('/pos/channels');
+            setChannels(channelsRes.data || []);
+        } catch (error) {
+            console.error('Failed to fetch users/customers:', error);
+        }
+    };
+
 
     useEffect(() => {
         fetchSales();
 
-        // ✅ Auto-refresh when returning from detail page
-        const handleFocus = () => {
-            fetchSales();
-        };
-
+        const handleFocus = () => fetchSales();
         window.addEventListener('focus', handleFocus);
-
-        return () => {
-            window.removeEventListener('focus', handleFocus);
-        };
+        return () => window.removeEventListener('focus', handleFocus);
     }, [filters]);
-
 
     const fetchSales = async () => {
         setLoading(true);
@@ -78,14 +112,27 @@ export default function Sales() {
                 params.paymentMethod = filters.paymentMethod;
             }
 
+            // ✅ NEW: Add new filter params
+            if (filters.userId !== 'ALL') {
+                params.userId = filters.userId;
+            }
+
+            if (filters.customerId !== 'ALL') {
+                params.customerId = filters.customerId;
+            }
+
+            if (filters.channel !== 'ALL') {
+                params.channel = filters.channel;
+            }
+
             if (filters.search) {
                 params.search = filters.search;
             }
 
             const res = await apiClient.get('/pos/sales', { params });
-            setSales(res.data.data || []);
+            setSales(res.data.data);
         } catch (error) {
-            console.error('Failed to fetch sales', error);
+            console.error('Failed to fetch sales:', error);
         } finally {
             setLoading(false);
         }
@@ -99,6 +146,9 @@ export default function Sales() {
         setFilters({
             dateFilter: 'all',
             paymentMethod: 'ALL',
+            userId: 'ALL',
+            customerId: 'ALL',
+            channel: 'ALL',
             startDate: '',
             endDate: '',
             search: '',
@@ -113,7 +163,6 @@ export default function Sales() {
                     <ShoppingCart size={32} color="#2563eb" />
                     <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>المبيعات</h1>
                 </div>
-
                 <button
                     onClick={() => setShowFilters(!showFilters)}
                     style={{
@@ -130,19 +179,13 @@ export default function Sales() {
                     }}
                 >
                     <Filter size={18} />
-                    {showFilters ? 'إخفاء الفلاتر' : 'عرض الفلاتر'}
+                    {showFilters ? 'إخفاء الفلتر' : 'إظهار الفلتر'}
                 </button>
             </div>
 
-            {/* Filters Panel */}
+            {/* ✅ UPDATED: Filters Panel with 7 filters */}
             {showFilters && (
-                <div style={{
-                    background: 'white',
-                    padding: '20px',
-                    borderRadius: '12px',
-                    marginBottom: '24px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                }}>
+                <div style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px' }}>
                         {/* Search */}
                         <div>
@@ -154,12 +197,7 @@ export default function Sales() {
                                 value={filters.search}
                                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                                 placeholder="ابحث..."
-                                style={{
-                                    width: '100%',
-                                    padding: '8px 12px',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: '6px',
-                                }}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
                             />
                         </div>
 
@@ -171,12 +209,7 @@ export default function Sales() {
                             <select
                                 value={filters.dateFilter}
                                 onChange={(e) => setFilters({ ...filters, dateFilter: e.target.value })}
-                                style={{
-                                    width: '100%',
-                                    padding: '8px 12px',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: '6px',
-                                }}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
                             >
                                 <option value="all">الكل</option>
                                 <option value="today">اليوم</option>
@@ -195,12 +228,7 @@ export default function Sales() {
                             <select
                                 value={filters.paymentMethod}
                                 onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })}
-                                style={{
-                                    width: '100%',
-                                    padding: '8px 12px',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: '6px',
-                                }}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
                             >
                                 <option value="ALL">الكل</option>
                                 <option value="CASH">نقدي</option>
@@ -211,6 +239,58 @@ export default function Sales() {
                                 <option value="WALLET">محفظة</option>
                             </select>
                         </div>
+
+                        {/* ✅ NEW: User Filter */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                                بواسطة (المستخدم)
+                            </label>
+                            <select
+                                value={filters.userId}
+                                onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+                            >
+                                <option value="ALL">جميع المستخدمين</option>
+                                {users.map(user => (
+                                    <option key={user.id} value={user.id}>{user.fullName}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* ✅ NEW: Customer Filter */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                                العميل
+                            </label>
+                            <select
+                                value={filters.customerId}
+                                onChange={(e) => setFilters({ ...filters, customerId: e.target.value })}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+                            >
+                                <option value="ALL">جميع العملاء</option>
+                                {customers.map(customer => (
+                                    <option key={customer.id} value={customer.id}>{customer.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* ✅ UPDATED: Channel Filter - Dynamic from DB */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                                القناة
+                            </label>
+                            <select
+                                value={filters.channel}
+                                onChange={(e) => setFilters({ ...filters, channel: e.target.value })}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
+                            >
+                                <option value="ALL">جميع القنوات</option>
+                                {channels.map(channel => (
+                                    <option key={channel} value={channel}>{channel}</option>
+                                ))}
+                            </select>
+                        </div>
+
 
                         {/* Reset Button */}
                         <div style={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -247,12 +327,7 @@ export default function Sales() {
                                     type="date"
                                     value={filters.startDate}
                                     onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px 12px',
-                                        border: '1px solid #d1d5db',
-                                        borderRadius: '6px',
-                                    }}
+                                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
                                 />
                             </div>
                             <div>
@@ -263,12 +338,7 @@ export default function Sales() {
                                     type="date"
                                     value={filters.endDate}
                                     onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px 12px',
-                                        border: '1px solid #d1d5db',
-                                        borderRadius: '6px',
-                                    }}
+                                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px' }}
                                 />
                             </div>
                         </div>
@@ -469,22 +539,15 @@ export default function Sales() {
             </div>
 
             {/* Summary */}
+            {/* ✅ UPDATED: Summary - Now shows Net Revenue (after returns) */}
             {!loading && sales.length > 0 && (
-                <div style={{
-                    marginTop: '16px',
-                    padding: '16px',
-                    background: 'white',
-                    borderRadius: '12px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                }}>
+                <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                        إجمالي المبيعات: <span style={{ fontWeight: 'bold', color: '#374151' }}>{sales.length}</span> فاتورة
+                        إجمالي المبيعات: <span style={{ fontWeight: 'bold', color: '#374151' }}>{sales.length}</span>
                     </div>
                     <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2563eb' }}>
-                        المجموع الكلي: {sales.reduce((sum, sale) => sum + Number(sale.total), 0).toFixed(2)} ر.س
+                        {/* ✅ CHANGED: From sale.total to sale.netRevenue */}
+                        صافي الإيرادات: {sales.reduce((sum, sale) => sum + Number(sale.netRevenue || sale.total), 0).toFixed(2)} ر.س
                     </div>
                 </div>
             )}

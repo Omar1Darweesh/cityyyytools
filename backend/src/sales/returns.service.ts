@@ -88,6 +88,32 @@ export class ReturnsService {
     async createReturn(data: CreateReturnDto & { userId: number }) {
         const { salesInvoiceId, items, reason, userId } = data;
 
+        for (const item of items) {
+            const isDefective = await this.isDefectiveProduct(item.productId);
+
+            // ✅ Auto-set return type for defective products FIRST
+            if (isDefective) {
+                // If user explicitly tried to set it as STOCK, throw error
+                if (item.returnType && item.returnType !== ReturnType.DEFECTIVE) {
+                    const product = await this.prisma.product.findUnique({
+                        where: { id: item.productId },
+                        select: { nameAr: true, nameEn: true, code: true },
+                    });
+
+                    if (!product) {
+                        throw new NotFoundException(`Product ${item.productId} not found`);
+                    }
+
+                    throw new BadRequestException(
+                        `المنتج "${product.nameAr || product.nameEn}" (${product.code}) هو منتج معيب ويجب إرجاعه كمنتج معيب فقط`
+                    );
+                }
+
+                // Always set to DEFECTIVE for defective products
+                item.returnType = ReturnType.DEFECTIVE;
+            }
+        }
+
         // Verify sales invoice exists
         const salesInvoice = await this.prisma.salesInvoice.findUnique({
             where: { id: salesInvoiceId },
@@ -314,6 +340,56 @@ export class ReturnsService {
             throw new NotFoundException(`Product ${item.productId} not found`);
         }
 
+        // ✅ NEW CODE STARTS HERE ====================================
+        // Check if the product being returned is ALREADY defective
+        const isAlreadyDefective = await this.isDefectiveProduct(item.productId);
+
+        if (isAlreadyDefective) {
+            // Product is already defective - just return it to stock (no need to create defective version)
+            await this.prisma.stockMovement.create({
+                data: {
+                    productId: item.productId,
+                    stockLocationId,
+                    qtyChange: item.qtyReturned,
+                    movementType: 'RETURN',
+                    refTable: 'sales_returns',
+                    refId: salesReturn.id,
+                    notes: `Defective product returned from invoice ${salesInvoice.invoiceNo}`,
+                    createdBy: userId,
+                },
+            });
+
+            console.log(
+                `✅ DEFECTIVE RETURN: Product ${originalProduct.code} (already defective) returned to stock, Qty: +${item.qtyReturned}`,
+            );
+
+            // Create audit log
+            return this.prisma.productAudit.create({
+                data: {
+                    productId: item.productId,
+                    action: 'UPDATE',
+                    userId,
+                    oldData: {
+                        returnInfo: {
+                            returnNo: salesReturn.returnNo,
+                            salesInvoiceNo: salesInvoice.invoiceNo,
+                            qty: item.qtyReturned,
+                            returnType: 'DEFECTIVE',
+                            alreadyDefective: true,
+                        },
+                    },
+                    newData: {
+                        stockMovement: {
+                            qtyChange: item.qtyReturned,
+                            movementType: 'RETURN',
+                        },
+                    },
+                },
+            });
+        }
+        // ✅ NEW CODE ENDS HERE ====================================
+
+
         let defectiveCategory = await this.prisma.category.findFirst({
             where: {
                 OR: [
@@ -452,6 +528,24 @@ export class ReturnsService {
 
 
 
+    async isDefectiveProduct(productId: number): Promise<boolean> {
+        const product = await this.prisma.product.findUnique({
+            where: { id: productId },
+            include: { category: true },
+        });
+
+        if (!product) return false;
+
+        // Check if product is in defective category
+        const isInDefectiveCategory =
+            product.category?.name?.toLowerCase() === 'defective' ||
+            product.category?.nameAr === 'تلافيات';
+
+        // Check if barcode has _DEF suffix
+        const hasDefectiveBarcode = product.barcode.endsWith('_DEF');
+
+        return isInDefectiveCategory || hasDefectiveBarcode;
+    }
 
 
     // ... keep rest of the methods (findAll, etc.)

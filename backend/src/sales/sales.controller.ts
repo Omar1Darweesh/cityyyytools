@@ -44,12 +44,27 @@ export class SalesController {
     return this.salesService.getCustomerPendingPayments(customerId);
   }
 
+
+  // ✅ NEW: Get all customers endpoint
+  @Get('customers')
+  getAllCustomers() {
+    return this.salesService.getAllCustomers();
+  }
+
+  // ✅ NEW: Get unique channels from database
+  @Get('channels')
+  getChannels() {
+    return this.salesService.getUniqueChannels();
+  }
+
   @Get('sales')
   findAll(
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('branchId') branchId?: string,
     @Query('customerId') customerId?: string,
+    @Query('userId') userId?: string,        // ✅ NEW
+    @Query('channel') channel?: string,       // ✅ NEW
     @Query('search') search?: string,
     @Query('paymentMethod') paymentMethod?: string,
     @Query('dateFilter') dateFilter?: string,
@@ -61,6 +76,8 @@ export class SalesController {
       take: take ? parseInt(take) : undefined,
       branchId: branchId ? parseInt(branchId) : undefined,
       customerId: customerId ? parseInt(customerId) : undefined,
+      userId: userId ? parseInt(userId) : undefined,        // ✅ NEW
+      channel: channel && channel !== 'ALL' ? channel : undefined, // ✅ NEW
       search,
       paymentMethod,
       dateFilter,

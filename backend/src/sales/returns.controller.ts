@@ -22,6 +22,12 @@ export class ReturnsController {
         return this.returnsService.checkDefectiveProduct(+productId);
     }
 
+    @Get('is-defective/:productId')
+    async isDefectiveProduct(@Param('productId') productId: string) {
+        const isDefective = await this.returnsService.isDefectiveProduct(+productId);
+        return { isDefective };
+    }
+
     // ✅ Protected endpoints below
     @Post()
     @UseGuards(JwtAuthGuard)
